@@ -1,0 +1,8 @@
+{
+  "name": "uni360-admin-portal",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev": "vite --host 127.0.0.1 --port 5173 --strictPort", "build": "vite build", "build:flutter": "vite build --mode flutter"},
+  "dependencies": {"@supabase/supabase-js": "^2.100.0"},
+  "devDependencies": {"vite": "^7.3.0"}
+}

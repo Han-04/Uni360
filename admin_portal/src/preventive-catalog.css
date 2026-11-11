@@ -1,0 +1,59 @@
+dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 12px 13px;
+  border: 1px solid #c9d4e0;
+  border-radius: 9px;
+  color: var(--navy);
+  font: inherit;
+  resize: vertical;
+}
+.catalog-error, .catalog-note { margin: 12px 20px; }
+.catalog-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+.catalog-metadata {
+  background: #f4f6fa;
+  border-radius: 9px;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.task-checklist {
+  min-width: 0;
+  margin: 14px 0;
+  padding: 4px 12px;
+  border: 1px solid #c9d4e0;
+  border-radius: 9px;
+}
+.task-checklist legend { padding: 0 4px; font-size: .9rem; font-weight: 650; }
+.task-checklist .check-field { margin: 8px 0; }
+.task-checklist p { margin: 8px 0; font-size: .9rem; }
+.schedule-time { display: flex; align-items: center; gap: 8px; }
+.schedule-time label { flex: 1; }
+.schedule-time:only-child [data-remove-time], .schedule-anchor:empty { display: none; }
+.facility-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: .9rem;
+}
+.facility-row-name { margin-inline-start: calc(var(--facility-depth) * 1.25rem); }
+.facility-open { padding-inline: 0; text-align: start; }
+.schedule-locations { max-height: 230px; overflow-y: auto; border-top: 1px solid var(--line); }
+.schedule-locations [hidden] { display: none; }
+.schedule-warning { border-color: #d7a931; }
+.schedule-warning .workforce-heading { background: #fff4d2; }
+.schedule-verification { margin-inline: 18px; }
+.task-review-detail { padding: 18px; }
+.task-review-detail h2 { margin: 12px 0 8px; font-size: 1.15rem; }
+.task-evidence-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 280px)); gap: 12px; }
+.task-evidence-grid img { display: block; width: 100%; max-height: 210px; object-fit: contain; background: #f3f6fa; border-radius: 8px; }
+.schedule-controls { flex-wrap: wrap; align-items: end; }
+.schedule-controls > label { width: auto; flex: 1 1 170px; max-width: 310px; }
+.schedule-controls select {
+  display: block; width: 100%; padding: 11px; border: 1px solid #c9d4e0;
+  border-radius: 9px; background: white; color: var(--navy); font: inherit;
+}
