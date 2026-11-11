@@ -1,0 +1,22 @@
+name: uni360
+description: "FYP Project Uni360"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  image_picker: ^1.2.4
+  supabase_flutter: 2.18.3
+  web: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
