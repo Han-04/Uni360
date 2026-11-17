@@ -77,6 +77,7 @@ class AssignedWorkRepository implements AssignedWorkActions {
   }
 
   PostgrestFilterBuilder<PostgrestList> _orders(String workerId) => _client
+      .schema('maintenance_api')
       .from('preventive_work_order')
       .select(_fields)
       .eq('worker_id', workerId)
@@ -152,10 +153,16 @@ class AssignedWorkRepository implements AssignedWorkActions {
     String action, [
     Map<String, dynamic> fields = const {},
   ]) async {
-    await _client.rpc(
+    final status = await _client.rpc<String>(
       'worker_work_order_action',
       params: {'target_order': orderId, 'action': action, ...fields},
     );
+    final expected = action == 'submit'
+        ? AssignedWorkStatus.submitted
+        : AssignedWorkStatus.inProgress;
+    if (status != expected.value) {
+      throw StateError('The work order changed. Refresh it and try again.');
+    }
   }
 
   @override

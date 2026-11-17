@@ -7,8 +7,9 @@ import '../account_repository.dart';
 import 'admin_portal_button.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.controller});
+  const LoginScreen({super.key, required this.controller, this.openAccess});
   final AccountController controller;
+  final void Function(BuildContext context, bool register)? openAccess;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -19,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
+  bool _signInForm = false;
   String? _error;
 
   @override
@@ -51,7 +53,73 @@ class _LoginScreenState extends State<LoginScreen> {
     builder: (context, _) {
       final busy = widget.controller.busy;
       final message = _error ?? widget.controller.sessionMessage;
+      if (widget.openAccess case final open? when !_signInForm) {
+        return Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(24),
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: CircleAvatar(
+                        radius: 34,
+                        backgroundColor: AppColors.navy,
+                        child: Icon(
+                          Icons.shield_outlined,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Welcome to Uni360',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Report campus faults, follow repairs and manage maintenance work.',
+                    ),
+                    const SizedBox(height: 24),
+                    if (message != null) ...[
+                      InfoBanner(message, warning: true),
+                      const SizedBox(height: 12),
+                    ],
+                    FilledButton(
+                      onPressed: () => setState(() => _signInForm = true),
+                      child: const Text('Sign in'),
+                    ),
+                    TextButton(
+                      onPressed: () => open(context, true),
+                      child: const Text('Create a reporter account'),
+                    ),
+                    const SizedBox(height: 12),
+                    const AdminPortalButton(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
       return Scaffold(
+        appBar: widget.openAccess == null
+            ? null
+            : AppBar(
+                leading: BackButton(
+                  onPressed: busy
+                      ? () {}
+                      : () => setState(() {
+                          _password.clear();
+                          _error = null;
+                          _signInForm = false;
+                        }),
+                ),
+              ),
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -153,10 +221,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(busy ? 'Please wait…' : 'Sign in'),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'Forgot your password? Contact your administrator.',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
+                      if (widget.openAccess case final open?) ...[
+                        TextButton(
+                          onPressed: busy ? null : () => open(context, false),
+                          child: const Text('Forgot password'),
+                        ),
+                        TextButton(
+                          onPressed: busy ? null : () => open(context, true),
+                          child: const Text('Create a reporter account'),
+                        ),
+                      ] else
+                        const Text(
+                          'Forgot your password? Contact your administrator.',
+                          style: TextStyle(color: AppColors.muted),
+                        ),
                       const SizedBox(height: 24),
                       const AdminPortalButton(),
                     ],

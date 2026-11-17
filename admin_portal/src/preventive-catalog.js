@@ -64,8 +64,8 @@ export function mountPreventiveCatalog(content, client, kind, superAdmin) {
   let trail = [];
   let standalone = false;
   let opening = false;
-  const table = () => client.from(catalog.table);
-  const loadLocations = () => allOptions(client.from('preventive_facility'), catalogs.facilities.fields, 'name');
+  const table = () => client.schema('maintenance_api').from(catalog.table);
+  const loadLocations = () => allOptions(client.schema('maintenance_api').from('preventive_facility'), catalogs.facilities.fields, 'name');
   const zoneName = id => id ? zones.find(zone => zone.id === id)?.name ?? 'Assigned zone' : 'Campus-wide';
 
   async function descendants(parentId) {
@@ -134,7 +134,7 @@ export function mountPreventiveCatalog(content, client, kind, superAdmin) {
       }
       const [entries, availableZones] = await Promise.all([
         listing,
-        allOptions(client.from('preventive_zone'), 'id,name', 'name'),
+        allOptions(client.schema('maintenance_api').from('preventive_zone'), 'id,name', 'name'),
       ]);
       if (!content.isConnected) return;
       zones = availableZones;
@@ -251,7 +251,7 @@ export function mountPreventiveCatalog(content, client, kind, superAdmin) {
       const lookup = isFacility
         ? row ? await allOptions(table(), 'id,name,zone_id,effective_active:preventive_facility_is_active',
           'name', 'id', query => query.eq('zone_id', row.zone_id)) : []
-        : await allOptions(client.from('worker_profile'), 'job_role', 'job_role', 'worker_id');
+        : await allOptions(client.schema('maintenance_api').from('worker_profile'), 'job_role', 'job_role', 'worker_id');
       if (!content.isConnected || !errorBox.isConnected) return;
       const defaultType = parent ? 'room' : standalone ? 'outdoor_area' : 'building';
       const fields = isFacility ? facilityFields(row, defaultType) : taskFields(row, lookup);

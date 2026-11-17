@@ -202,7 +202,7 @@ export function reviewSchedule(content, client, zones, loadLocations, back) {
     const paths = locationPaths(await loadLocations());
     const names = new Map();
     for (let offset = 0; offset < ids.length; offset += 50) {
-      const plans = await scheduleResult(client.from('preventive_task_plan').select('id,facility_id')
+      const plans = await scheduleResult(client.schema('maintenance_api').from('preventive_task_plan').select('id,facility_id')
         .in('id', ids.slice(offset, offset + 50)));
       for (const plan of plans) names.set(plan.id, paths.get(plan.facility_id));
     }
@@ -226,7 +226,7 @@ function mountScheduledTasks(panel, client) {
     panel.innerHTML = `<section class="card workforce-section">${heading}<p class="catalog-note muted" role="status">Loading scheduled tasks…</p></section>`;
     try {
       const plan = zone || template || facilities ? ',preventive_task_plan!inner(zone_id)' : '';
-      let query = client.from('preventive_work_order')
+      let query = client.schema('maintenance_api').from('preventive_work_order')
         .select(`id,title,worker_id,scheduled_for,due_at,status,preventive_work_order_target(facility_path)${plan}`)
         .is('cancelled_at', null).not('worker_id', 'is', null).gte('scheduled_for', malaysiaMidnight(first))
         .order('scheduled_for').order('id').range(page * pageSize, (page + 1) * pageSize);

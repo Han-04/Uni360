@@ -2,10 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array><string>com.example.uni360</string></array>
+		</dict>
+	</array>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Take photos as evidence of completed Uni360 tasks.</string>
+	<string>Scan facility QR codes and take photos as evidence of Uni360 tasks.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Verify that you are at the assigned campus facility when checking in.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose photos as evidence for your assigned Uni360 tasks.</string>
+	<string>Attach existing photos to Uni360 incident reports or preventive work orders.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

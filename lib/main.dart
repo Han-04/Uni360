@@ -1,3 +1,5 @@
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app/uni360_app.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/phone_viewport.dart';
+import 'features/corrective/corrective_access.dart';
+import 'features/corrective/corrective_repository.dart';
 import 'features/preventive/data/assigned_work_repository.dart';
 import 'features/workforce/worker_profile_repository.dart';
 import 'shared/account/supabase_account_repository.dart';
@@ -22,12 +26,18 @@ Future<void> main() async {
     runApp(const _SetupRequired());
     return;
   }
+  final initialLink = kIsWeb
+      ? Uri.base
+      : (defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS
+            ? await AppLinks().getInitialLink()
+            : null);
   await Supabase.initialize(
     url: url,
     publishableKey: publishableKey,
-    authOptions: const FlutterAuthClientOptions(
-      localStorage: EmptyLocalStorage(),
-      detectSessionInUri: false,
+    authOptions: FlutterAuthClientOptions(
+      localStorage: const EmptyLocalStorage(),
+      detectSessionInUriPredicate: isCorrectiveRecoveryUri,
     ),
   );
   final client = Supabase.instance.client;
@@ -38,6 +48,11 @@ Future<void> main() async {
       loadWorkerProfile: WorkerProfileRepository(client).load,
       loadAssignedWork: work.load,
       workActions: work,
+      corrective: CorrectiveRepository(client),
+      initialRecovery:
+          initialLink != null &&
+          isCorrectiveRecoveryUri(initialLink) &&
+          client.auth.currentSession != null,
     ),
   );
 }

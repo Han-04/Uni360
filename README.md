@@ -1,6 +1,6 @@
-# Uni360 · Preventive maintenance mobile
+# Uni360 Campus Operations
 
-Flutter worker app based on the proposal’s mobile designs (Figures 4.19–4.27), with a separate desktop portal for account management. See the [desktop portal guide](docs/admin-portal.md).
+Uni360 brings Corrective and Preventive Maintenance into one post-login workspace. See the [Corrective setup and supervisor walkthrough](lib/features/corrective/README.md) and the [desktop administration guide](docs/admin-portal.md).
 
 ## Run
 
@@ -9,16 +9,23 @@ Developed with Flutter 3.47.5 / Dart 3.13.4. Set up the Supabase account table, 
 ```sh
 flutter pub get
 flutter devices
+flutter run -d chrome --dart-define-from-file=config/supabase.json
 flutter run -d <android-device-id> --dart-define-from-file=config/supabase.json
 ```
 
 The worker app is designed for **portrait Android/iOS phones**. On Windows, run `./tool/run_worker_android.ps1` to launch the available Pixel 3a emulator and open the native Android app. Alternatively, connect a phone with USB debugging, select it in Android Studio and run `lib/main.dart`. iOS builds require macOS and Xcode.
 
-Phone screens use their available device size. On a larger display, the entire app—including navigation, dialogs and task screens—stays inside a portrait phone viewport up to 430 × 932 logical pixels.
+Worker views use a portrait phone viewport up to 430 × 932 logical pixels. Administrator views expand to desktop width on the web.
 
-Sign in with a confirmed Supabase Auth email and password. The account's role determines which workspace opens.
+Sign in with a confirmed Supabase Auth email and password. Campus Operations gives workers and administrators role-specific entry points for both maintenance modules.
 
-## Try the workflow
+## Shared Supabase database
+
+Apply the [storage consolidation migration](supabase/migrations/20261112010000_consolidate_maintenance_storage.sql) after the Corrective migration, then apply the [Table Editor migration](supabase/migrations/20261112020000_clean_public_table_editor.sql). Supabase Table Editor shows nine core tables in the default `public` schema. The six shared tables are under `uni360_data`. The Flutter app and Preventive desktop portal use the role-scoped views in `maintenance_api`.
+
+Both modules use the same facilities, zones, workers, skills and shifts. Preventive schedule previews account for active Corrective reservations and the database checks for overlaps when saving. Run the [shared workflow check](supabase/verify_maintenance_consolidation.sql) in SQL Editor to verify scheduling, worker evidence, approval and access with rollback-only fixtures.
+
+## Try the Preventive workflow
 
 1. Open **Air-conditioning service** from Home or My tasks.
 2. Select **Verify location & check in**, verify the demo location, simulate a matching QR scan, then start the work timer.
@@ -46,7 +53,7 @@ lib/
       presentation/
         screens/               Worker screens
         widgets/               Work-order cards and status indicators
-    corrective/                Reserved boundary (README only)
+    corrective/                Incident reporting, dispatch, repair and review
 test/                          Workflow and mobile widget tests
 docs/                          Architecture and integration notes
 supabase/                      Account migration and test account seed

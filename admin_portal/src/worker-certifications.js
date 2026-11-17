@@ -86,7 +86,7 @@ export function bindCertifications(content, client, workerId, certificates, upda
         verified: values.has('verified'),
         document_path: path,
       };
-      const table = client.from('worker_certification');
+      const table = client.schema('maintenance_api').from('worker_certification');
       try {
         await write(certificate
           ? table.update(changes).eq('worker_id', workerId).eq('certification_id', certificateId)

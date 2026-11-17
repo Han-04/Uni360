@@ -53,7 +53,7 @@ export function mountWorkerAvailability(section, client, workerId) {
     section.innerHTML = `<header class="workforce-heading"><h2>Date availability</h2></header>
       <p class="calendar-notice muted" role="status">Loading availability…</p>`;
     try {
-      const shifts = await result(client.from('worker_availability')
+      const shifts = await result(client.schema('maintenance_api').from('worker_availability')
         .select('availability_id,availability,shift_start,shift_end,availability_status,leave_status')
         .eq('worker_id', workerId).lt('shift_start', dayStart(Date.UTC(year, monthIndex + 1, 1)))
         .gt('shift_end', dayStart(month)).order('shift_start'));
@@ -129,7 +129,7 @@ export function mountWorkerAvailability(section, client, workerId) {
     const heading = `<h3>${fullDate.format(value)}</h3>`;
     panel.innerHTML = `${heading}<p class="muted" role="status">Loading assigned tasks…</p>`;
     try {
-      const tasks = await result(client.from('preventive_work_order')
+      const tasks = await result(client.schema('maintenance_api').from('preventive_work_order')
         .select('id,title,scheduled_for,due_at,status,preventive_work_order_target(facility_name),preventive_work_completion(work_order_id,actual_minutes)')
         .eq('worker_id', workerId).is('cancelled_at', null).gte('scheduled_for', dayStart(value))
         .lt('scheduled_for', dayStart(value + day)).order('scheduled_for'));
@@ -147,7 +147,7 @@ export function mountWorkerAvailability(section, client, workerId) {
         const task = tasks[Number(button.dataset.worked)];
         button.onclick = () => openForm(section, 'Record worked time',
           field('Minutes worked', 'minutes', task.preventive_work_completion.actual_minutes, 'type="number" min="1" max="1440" required'),
-          values => write(client.from('preventive_work_completion').update({ actual_minutes: Number(values.get('minutes')) })
+          values => write(client.schema('maintenance_api').from('preventive_work_completion').update({ actual_minutes: Number(values.get('minutes')) })
             .eq('work_order_id', task.id), 'work_order_id'), () => showDay(value));
       });
     } catch (error) {
@@ -183,7 +183,7 @@ export function mountWorkerAvailability(section, client, workerId) {
         availability_status: values.get('availability_status'),
         leave_status: values.get('leave_status'),
       };
-      const table = client.from('worker_availability');
+      const table = client.schema('maintenance_api').from('worker_availability');
       await write(shift
         ? table.update(changes).eq('worker_id', workerId).eq('availability_id', shift.availability_id)
         : table.insert({ ...changes, worker_id: workerId }), 'availability_id');

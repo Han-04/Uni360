@@ -16,7 +16,7 @@ export function mountTaskApprovals(content, client) {
   async function load(message = '') {
     content.innerHTML = '<header class="section-head"><h1>Task approvals</h1></header><p class="muted" role="status">Loading submissions…</p>';
     try {
-      const orders = await scheduleResult(client.from('preventive_work_order')
+      const orders = await scheduleResult(client.schema('maintenance_api').from('preventive_work_order')
         .select('id,title,worker_id,scheduled_for,submitted_at,preventive_work_order_target(facility_path)')
         .eq('status', 'submitted').is('cancelled_at', null).order('submitted_at').order('id')
         .range(page * pageSize, (page + 1) * pageSize));
@@ -73,7 +73,7 @@ export function mountTaskApprovals(content, client) {
   async function detail(id) {
     content.innerHTML = '<p class="muted" role="status">Loading submitted work…</p>';
     try {
-      const order = await scheduleResult(client.from('preventive_work_order')
+      const order = await scheduleResult(client.schema('maintenance_api').from('preventive_work_order')
         .select('id,title,worker_id,instructions,checklist,checked_items,worker_notes,scheduled_for,submitted_at,status,preventive_work_order_target(facility_path),preventive_work_evidence(path)')
         .eq('id', id).is('cancelled_at', null).maybeSingle());
       if (!content.isConnected) return;

@@ -59,9 +59,9 @@ export function mountWorkforce(content, client) {
     pending('Worker profile');
     try {
       const [profile, assignments, certificates] = await Promise.all([
-        result(client.from('worker_profile').select(profileFields).eq('worker_id', worker.worker_id).single()),
-        result(client.from('worker_skill').select('worker_skill_id,skill(skill_name)').eq('worker_id', worker.worker_id)),
-        result(client.from('worker_certification')
+        result(client.schema('maintenance_api').from('worker_profile').select(profileFields).eq('worker_id', worker.worker_id).single()),
+        result(client.schema('maintenance_api').from('worker_skill').select('worker_skill_id,skill(skill_name)').eq('worker_id', worker.worker_id)),
+        result(client.schema('maintenance_api').from('worker_certification')
           .select('certification_id,certification_name,certification_no,expiry_date,verified,document_path')
           .eq('worker_id', worker.worker_id).order('certification_name').order('certification_id')),
       ]);
@@ -102,7 +102,7 @@ export function mountWorkforce(content, client) {
       ${field('Current workload', 'current_workload', profile.current_workload, 'type="number" min="0" max="2147483647" step="1" required')}
       ${field('Daily work limit (minutes)', 'daily_work_limit_minutes', profile.daily_work_limit_minutes, 'type="number" min="1" max="1440" step="1" required')}
       ${checkbox('Available for standby', 'standby_status', profile.standby_status)}`,
-    values => write(client.from('worker_profile').update({
+    values => write(client.schema('maintenance_api').from('worker_profile').update({
       job_role: optional(values.get('job_role')),
       assigned_zone: optional(values.get('assigned_zone')),
       employment_status: values.get('employment_status').trim(),

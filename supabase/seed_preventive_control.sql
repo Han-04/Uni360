@@ -20,7 +20,7 @@ begin
   perform 1 from public.worker_profile where worker_id = demo_worker;
   if not found then raise exception 'The demo worker must have a workforce profile.'; end if;
 
-  insert into public.preventive_zone_admin (zone_id, administrator_id)
+  insert into maintenance_api.preventive_zone_admin (zone_id, administrator_id)
     values ('36000000-0000-4000-8000-000000000001', demo_admin)
     on conflict do nothing;
 end;
@@ -35,7 +35,7 @@ insert into public.preventive_facility (id, zone_id, parent_id, name, facility_t
   ('36000000-0000-4000-8000-000000000016', '36000000-0000-4000-8000-000000000002', null, 'Hostel Courtyard', 'outdoor_area', '{}')
 on conflict (id) do nothing;
 
-insert into public.preventive_task_definition
+insert into maintenance_api.preventive_task_definition
   (id, title, instructions, category, required_job_role, required_skill_id, checklist)
 values
   ('36000000-0000-4000-8000-000000000021', 'Toilet Cleaning',
@@ -59,7 +59,7 @@ insert into public.preventive_task_plan (id, task_definition_id, facility_id, zo
     null, null, 'Monthly Campus Mosquito Control')
 on conflict (id) do nothing;
 
-insert into public.preventive_campaign_target (plan_id, facility_id) values
+insert into maintenance_api.preventive_campaign_target (plan_id, facility_id) values
   ('36000000-0000-4000-8000-000000000033', '36000000-0000-4000-8000-000000000015'),
   ('36000000-0000-4000-8000-000000000033', '36000000-0000-4000-8000-000000000016')
 on conflict do nothing;
@@ -83,7 +83,7 @@ from (values
 left join public.account worker on sample.assigned and worker.employee_id = 'EMP-2026-001'
 on conflict (id) do nothing;
 
-insert into public.preventive_work_completion (work_order_id, worker_id, completed_at, notes)
+insert into maintenance_api.preventive_work_completion (work_order_id, worker_id, completed_at, notes)
 select id, worker_id, '2026-11-05 10:35+08', 'Demo inspection complete. Lighting and exit access were clear.'
 from public.preventive_work_order where id = '36000000-0000-4000-8000-000000000054'
   and worker_id = (select user_id from public.account where employee_id = 'EMP-2026-001')

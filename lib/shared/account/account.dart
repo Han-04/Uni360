@@ -1,10 +1,13 @@
 enum AccountRole {
   superAdministrator('super_administrator', 'Super Administrator'),
   administrator('administrator', 'Administrator'),
-  worker('worker', 'Worker');
+  worker('worker', 'Worker'),
+  reporter('reporter', 'Reporter');
 
   const AccountRole(this.value, this.label);
   final String value, label;
+  bool get isAdministrator =>
+      this == administrator || this == superAdministrator;
 }
 
 class Account {

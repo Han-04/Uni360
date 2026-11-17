@@ -58,6 +58,7 @@ class WorkerProfileRepository {
 
   Future<WorkerProfile?> load(String workerId) async {
     final row = await _client
+        .schema('maintenance_api')
         .from('worker_profile')
         .select('''
       job_role,assigned_zone,standby_status,current_workload,employment_status,

@@ -8,7 +8,7 @@ begin
     values ('TAR UMT Campus') on conflict (name) do nothing;
   select id into strict campus_zone from public.preventive_zone where name = 'TAR UMT Campus';
 
-  insert into public.preventive_zone_admin (zone_id, administrator_id)
+  insert into maintenance_api.preventive_zone_admin (zone_id, administrator_id)
   select campus_zone, a.user_id
   from public.account a join auth.users u on u.id = a.user_id
   where a.role = 'administrator' and a.is_active and u.email = 'admin@uni360.example'

@@ -36,10 +36,10 @@ export function mountFacilitySchedules(content, client, facility, back, path) {
     content.querySelector('[data-back]').onclick = returnToFacilities;
     try {
       const [plans, availableTemplates] = await Promise.all([
-        read(client.from('preventive_task_plan')
+        read(client.schema('maintenance_api').from('preventive_task_plan')
           .select('is_active,preventive_task_definition(id,title,is_active),preventive_schedule(id,frequency,starts_on,ends_on,local_time,is_active)')
           .eq('facility_id', facility.id)),
-        read(client.from('preventive_task_definition').select('id,title').eq('is_active', true)
+        read(client.schema('maintenance_api').from('preventive_task_definition').select('id,title').eq('is_active', true)
           .or(`zone_id.is.null,zone_id.eq.${facility.zone_id}`).order('title').order('id')),
       ]);
       if (!active || !content.isConnected) return;
@@ -141,7 +141,7 @@ export function mountFacilitySchedules(content, client, facility, back, path) {
     openForm(content, 'Deactivate schedule time?',
       `<p>${escape(slot.template.title)} · ${frequencies[slot.frequency]} at ${escape(formatTime(slot.local_time))}</p>
         <p>Existing work orders will be kept.</p>`, async () => {
-        const updated = await read(client.from('preventive_schedule').update({ is_active: false })
+        const updated = await read(client.schema('maintenance_api').from('preventive_schedule').update({ is_active: false })
           .eq('id', slot.id).eq('is_active', true).select('id').maybeSingle());
         if (!updated) throw new Error('This schedule has changed. Refresh and try again.');
       }, () => load('Schedule time deactivated.'), 'Deactivate');
