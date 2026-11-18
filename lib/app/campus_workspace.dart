@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme/app_theme.dart';
+import '../core/widgets/curved_back_button.dart';
 import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_mobile.dart';
 import '../features/corrective/corrective_repository.dart';
 import '../features/corrective/corrective_widgets.dart';
+import '../features/workforce/worker_profile_repository.dart';
 import '../shared/account/account.dart';
 import '../shared/account/account_controller.dart';
 import '../shared/account/presentation/account_profile_screen.dart';
@@ -22,11 +24,14 @@ class CampusWorkspace extends StatefulWidget {
     required this.corrective,
     this.preventive,
     this.workforceDetails,
+    this.loadWorkerProfile,
+    this.workerStatus,
   });
   final AccountController accounts;
   final Account account;
   final CorrectiveRepository corrective;
-  final Widget? preventive, workforceDetails;
+  final Widget? preventive, workforceDetails, workerStatus;
+  final WorkerProfileLoader? loadWorkerProfile;
 
   @override
   State<CampusWorkspace> createState() => _CampusWorkspaceState();
@@ -119,14 +124,17 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
               'Open Uni360 on a computer to manage preventive schedules.',
         ),
     ];
-    return Scaffold(
+    final workspace = Scaffold(
       appBar: AppBar(
-        title: const Row(
+        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.shield_outlined, color: AppColors.teal),
-            SizedBox(width: 8),
-            Text('Uni360', style: TextStyle(fontWeight: FontWeight.w800)),
+            Icon(
+              Icons.shield_outlined,
+              color: _worker ? WorkerColors.blue : AppColors.teal,
+            ),
+            const SizedBox(width: 8),
+            const Text('Uni360', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
         ),
         actions: [
@@ -135,10 +143,16 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => Scaffold(
-                  appBar: AppBar(title: const Text('My profile')),
+                  appBar: AppBar(
+                    leading: _worker ? const CurvedBackButton() : null,
+                    title: const Text('My profile'),
+                    backgroundColor: _worker ? WorkerColors.background : null,
+                  ),
                   body: AccountProfileScreen(
                     controller: widget.accounts,
                     workforceDetails: widget.workforceDetails,
+                    loadWorkerProfile: widget.loadWorkerProfile,
+                    workerStatus: widget.workerStatus,
                   ),
                 ),
               ),
@@ -172,6 +186,9 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
                       title: 'Campus operations',
                       subtitle: 'Welcome, $name · ${widget.account.role.label}',
                       icon: Icons.apartment_rounded,
+                      gradientColors: _worker
+                          ? const [WorkerColors.blue, WorkerColors.deepBlue]
+                          : const [Color(0xFF10243D), Color(0xFF154D59)],
                     ),
                     correctiveGap(22),
                     if (!widget.account.role.isAdministrator)
@@ -218,6 +235,9 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
         ),
       ),
     );
+    return _worker
+        ? Theme(data: buildWorkerTheme(Theme.of(context)), child: workspace)
+        : workspace;
   }
 }
 

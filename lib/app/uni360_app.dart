@@ -9,16 +9,20 @@ import '../core/widgets/phone_viewport.dart';
 import '../features/corrective/corrective_access.dart';
 import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_repository.dart';
+import '../features/preventive/admin/admin_dashboard.dart';
+import '../features/preventive/admin/admin_data.dart';
 import '../features/preventive/data/assigned_work_repository.dart';
+import '../features/preventive/data/preventive_alert_repository.dart';
 import '../features/preventive/presentation/screens/assigned_work_shell.dart';
 import '../features/workforce/worker_profile_repository.dart';
-import '../features/workforce/worker_profile_section.dart';
+import '../features/workforce/worker_leave_repository.dart';
+import '../features/workforce/worker_leave_screen.dart';
+import '../features/workforce/worker_status_badge.dart';
 import '../shared/account/account.dart';
 import '../shared/account/account_controller.dart';
 import '../shared/account/account_repository.dart';
 import '../shared/account/presentation/login_screen.dart';
 import '../shared/account/presentation/admin_portal_button.dart';
-import '../shared/account/presentation/admin_portal_view.dart';
 import 'campus_workspace.dart';
 
 class Uni360App extends StatefulWidget {
@@ -29,6 +33,9 @@ class Uni360App extends StatefulWidget {
     required this.loadAssignedWork,
     this.workActions,
     this.corrective,
+    this.administration,
+    this.alerts,
+    this.leave,
     this.initialRecovery = false,
   });
   final AccountRepository accounts;
@@ -36,6 +43,9 @@ class Uni360App extends StatefulWidget {
   final AssignedWorkLoader loadAssignedWork;
   final AssignedWorkActions? workActions;
   final CorrectiveRepository? corrective;
+  final AdminData? administration;
+  final PreventiveAlertRepository? alerts;
+  final WorkerLeaveRepository? leave;
   final bool initialRecovery;
   @override
   State<Uni360App> createState() => _Uni360AppState();
@@ -44,7 +54,7 @@ class Uni360App extends StatefulWidget {
 class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
   late final _accounts = AccountController(widget.accounts);
   late final _adminVisible = ValueNotifier(
-    kIsWeb && Uri.base.fragment == adminPortalRoute,
+    widget.administration != null && Uri.base.fragment == adminPortalRoute,
   );
   Timer? _sessionTimer;
   StreamSubscription<AuthState>? _recoverySubscription;
@@ -90,12 +100,15 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
         _recovering ? 'corrective-recovery' : _accounts.account?.id,
       ),
       title: 'Uni360',
+      initialRoute: _adminVisible.value ? adminPortalRoute : null,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       navigatorObservers: [
         _AdminRouteObserver((visible) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _adminVisible.value = kIsWeb && visible;
+            if (mounted) {
+              _adminVisible.value = widget.administration != null && visible;
+            }
           });
         }),
       ],
@@ -112,10 +125,20 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
         ),
       ),
       routes: {
-        adminPortalRoute: (context) => Scaffold(
-          appBar: AppBar(title: const Text('Uni360 Administration')),
-          body: const SafeArea(child: AdminPortalView()),
-        ),
+        adminPortalRoute: (context) {
+          final data = widget.administration;
+          if (data == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Uni360 Administration')),
+              body: const Center(
+                child: Text(
+                  'Open Uni360 in a desktop browser to manage accounts.',
+                ),
+              ),
+            );
+          }
+          return AdminDashboard(accounts: _accounts, data: data);
+        },
         correctiveAdminRoute: (context) {
           final account = _accounts.account;
           final repository = widget.corrective;
@@ -158,16 +181,29 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
       );
     }
     if (account.role == AccountRole.worker) {
-      final workforceDetails = switch (widget.loadWorkerProfile) {
-        final load? => WorkerProfileSection(workerId: account.id, load: load),
+      final workerStatus = switch (widget.leave) {
+        final repository? => WorkerStatusBadge(
+          workerId: account.id,
+          repository: repository,
+        ),
         null => null,
       };
+      final workforceDetails = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.leave case final repository?)
+            WorkerLeaveEntry(workerId: account.id, repository: repository),
+        ],
+      );
       final preventive = AssignedWorkShell(
         accounts: _accounts,
         workerId: account.id,
         load: widget.loadAssignedWork,
         actions: widget.workActions,
+        alerts: widget.alerts,
         workforceDetails: workforceDetails,
+        loadWorkerProfile: widget.loadWorkerProfile,
+        workerStatus: workerStatus,
       );
       final corrective = widget.corrective;
       if (corrective == null) return preventive;
@@ -177,6 +213,8 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
         corrective: corrective,
         preventive: preventive,
         workforceDetails: workforceDetails,
+        loadWorkerProfile: widget.loadWorkerProfile,
+        workerStatus: workerStatus,
       );
     }
     if (widget.corrective case final corrective?) {
@@ -215,6 +253,8 @@ class _AdminRouteObserver extends NavigatorObserver {
 
   @override
   void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
-    onChanged(topRoute.settings.name == adminPortalRoute);
+    if (topRoute is PageRoute) {
+      onChanged(topRoute.settings.name == adminPortalRoute);
+    }
   }
 }

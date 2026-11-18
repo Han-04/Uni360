@@ -25,8 +25,8 @@ declare
   read_at timestamptz;
 begin
   assert (select count(*) = 15 from information_schema.tables
-    where table_schema in ('public', 'uni360_data', 'uni360_private', 'maintenance_api') and table_type = 'BASE TABLE'),
-    'Expected 15 physical application tables.';
+    where table_schema in ('public', 'uni360_data') and table_type = 'BASE TABLE'),
+    'Expected 15 core maintenance tables.';
   assert (select count(*) between 1 and 15 and bool_and(table_type = 'BASE TABLE')
     from information_schema.tables where table_schema = 'public'),
     'The default Table Editor list should contain only core tables.';
@@ -54,9 +54,10 @@ begin
     (reporter, upper(reporter::text), 'Maintenance Test Reporter', 'reporter');
   insert into public.preventive_zone(id, name) values (zone, 'Maintenance test ' || zone);
   insert into maintenance_api.preventive_zone_admin(zone_id, administrator_id) values (zone, manager);
-  insert into public.preventive_facility(id, zone_id, name, facility_type)
-  values (facility, zone, 'Shared test facility', 'building');
-  update public.worker_profile set job_role = 'Plumber', assigned_zone = 'Maintenance test ' || zone,
+  insert into uni360_private.facility_access_scope(facility_id, zone_id) values (facility, zone);
+  insert into public.preventive_facility(id, name, facility_type)
+  values (facility, 'Shared test facility', 'building');
+  update public.worker_profile set job_role = 'Plumber',
     employment_status = 'active' where worker_id = technician;
   insert into public.corrective_incident(id, facility_id, zone_id, facility_name, category,
     title, description, location_detail, urgency, reporter_id, reporter_name, worker_id, worker_name,
@@ -124,17 +125,19 @@ begin
   assert public.worker_work_order_action(task.id, 'start') = 'in_progress';
   assert public.worker_work_order_action(task.id, 'check', 0, true) = 'in_progress';
 
-  picture := technician || '/' || task.id || '/' || replace(gen_random_uuid()::text, '-', '') || '.jpg';
+  picture := technician || '/' || task.id || '/camera-' || replace(gen_random_uuid()::text, '-', '') || '.jpg';
   insert into storage.objects(bucket_id, name, owner_id) values ('preventive-work-evidence', picture, technician::text);
-  assert public.worker_work_order_action(task.id, 'attach', evidence_path => picture) = 'in_progress';
-  assert public.worker_work_order_action(task.id, 'attach', evidence_path => picture) = 'in_progress';
+  assert public.preventive_campus_action(task.id, 'camera', 3.2162, 101.7298, 12, now(), picture) = 'in_progress';
+  assert public.preventive_campus_action(task.id, 'camera', 3.2162, 101.7298, 12, now(), picture) = 'in_progress';
   assert (select count(*) = 1 from maintenance_api.preventive_work_evidence(task) e where e.path = picture);
-  assert public.worker_work_order_action(task.id, 'submit', notes => 'Valves inspected') = 'submitted';
+  assert public.preventive_campus_action(task.id, 'submit', 3.2162, 101.7298, 12, now(),
+    notes => 'Valves inspected') = 'submitted';
 
   perform set_config('request.jwt.claim.sub', manager::text, true);
   assert public.review_work_submission(task.id, false, 'Check the isolation valve again.') = 'in_progress';
   perform set_config('request.jwt.claim.sub', technician::text, true);
-  assert public.worker_work_order_action(task.id, 'submit', notes => 'Valves inspected again') = 'submitted';
+  assert public.preventive_campus_action(task.id, 'submit', 3.2162, 101.7298, 12, now(),
+    notes => 'Valves inspected again') = 'submitted';
   perform set_config('request.jwt.claim.sub', manager::text, true);
   assert public.review_work_submission(task.id, true) = 'completed';
   assert public.review_work_submission(task.id, true) = 'completed';
@@ -149,6 +152,6 @@ $$;
 rollback;
 
 select count(*) filter (where table_schema = 'public')::int as public_table_editor_entries,
-  count(*)::int as application_tables, count(*) = 15 as shared_workflow_verified
+  count(*)::int as core_maintenance_tables, count(*) = 15 as shared_workflow_verified
 from information_schema.tables
-where table_schema in ('public', 'uni360_data', 'uni360_private', 'maintenance_api') and table_type = 'BASE TABLE';
+where table_schema in ('public', 'uni360_data') and table_type = 'BASE TABLE';

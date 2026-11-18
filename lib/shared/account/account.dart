@@ -18,10 +18,12 @@ class Account {
     required this.name,
     required this.phone,
     required this.role,
+    this.photoPath,
   });
 
   final String id, employeeId, email, name, phone;
   final AccountRole role;
+  final String? photoPath;
 
   Account withContact({required String name, required String phone}) => Account(
     id: id,
@@ -30,5 +32,6 @@ class Account {
     name: name,
     phone: phone,
     role: role,
+    photoPath: photoPath,
   );
 }

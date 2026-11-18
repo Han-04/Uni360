@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/curved_back_button.dart';
+
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/common.dart';
 import '../../application/preventive_controller.dart';
@@ -48,7 +50,10 @@ class _VerificationScreenState extends State<VerificationScreen> {
           qr = c.hasQr(o),
           reading = c.readingFor(o);
       return Scaffold(
-        appBar: AppBar(title: const Text('Verify your work site')),
+        appBar: AppBar(
+          leading: CurvedBackButton.forRoute(context),
+          title: const Text('Verify your work site'),
+        ),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),

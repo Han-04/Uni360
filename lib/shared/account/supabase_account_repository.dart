@@ -1,5 +1,9 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:typed_data';
 
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../core/utils/photo_upload.dart';
 import 'account.dart';
 import 'account_repository.dart';
 
@@ -7,7 +11,10 @@ class SupabaseAccountRepository implements AccountRepository {
   SupabaseAccountRepository(this._client);
 
   final SupabaseClient _client;
-  static const _fields = 'user_id,employee_id,full_name,phone,role,is_active';
+  static const _fields =
+      'user_id,employee_id,full_name,phone,role,is_active,profile_photo_path';
+  static const maxPhotoBytes = 5 * 1024 * 1024;
+  StorageFileApi get _photos => _client.storage.from('account-photos');
 
   @override
   Stream<void> get signedOut => _client.auth.onAuthStateChange
@@ -67,18 +74,59 @@ class SupabaseAccountRepository implements AccountRepository {
   Future<Account> updateContact(
     Account account,
     String name,
-    String phone,
-  ) async {
-    final row = await _client
-        .from('account')
-        .update({'full_name': name, 'phone': phone})
-        .eq('user_id', account.id)
-        .select(_fields)
-        .maybeSingle();
-    if (row == null) {
-      throw const AccountException('This profile is no longer available.');
+    String phone, {
+    Uint8List? photo,
+  }) async {
+    if (_client.auth.currentUser?.id != account.id) {
+      throw const AccountException('Sign in again.');
     }
-    return _account(row, account.email);
+    String? uploaded;
+    if (photo != null) {
+      if (photo.isEmpty || photo.length > maxPhotoBytes) {
+        throw const FormatException('Choose a photo up to 5 MB.');
+      }
+      final (extension, mime) = photoUploadType(photo);
+      uploaded = '${account.id}/${const Uuid().v4()}.$extension';
+      await _photos.uploadBinary(
+        uploaded,
+        photo,
+        fileOptions: FileOptions(contentType: mime, cacheControl: '0'),
+      );
+    }
+    try {
+      final row = await _client
+          .rpc(
+            'save_account_profile',
+            params: {
+              'target_account': account.id,
+              'name': name,
+              'phone_number': phone,
+              'photo': uploaded,
+            },
+          )
+          .single();
+      final previous = account.photoPath;
+      if (previous != null && uploaded != null) await _removePhoto(previous);
+      return _account(row, account.email);
+    } catch (_) {
+      if (uploaded != null) await _removePhoto(uploaded);
+      rethrow;
+    }
+  }
+
+  Future<void> _removePhoto(String path) async {
+    try {
+      await _photos.remove([path]);
+    } on Exception {
+      // The active profile photo remains protected by Storage policies.
+    }
+  }
+
+  @override
+  Future<String?> photoUrl(Account account) async {
+    final path = account.photoPath;
+    if (path == null || _client.auth.currentUser?.id != account.id) return null;
+    return _photos.createSignedUrl(path, 300);
   }
 
   @override
@@ -106,6 +154,7 @@ class SupabaseAccountRepository implements AccountRepository {
     email: email,
     name: row['full_name'] as String,
     phone: row['phone'] as String,
+    photoPath: row['profile_photo_path'] as String?,
     role: AccountRole.values.firstWhere(
       (role) => role.value == row['role'],
       orElse: () =>

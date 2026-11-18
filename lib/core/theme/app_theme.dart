@@ -7,6 +7,25 @@ abstract final class AppColors {
   static const muted = Color(0xFF65758A);
 }
 
+abstract final class WorkerColors {
+  static const blue = Color(0xFF145AF2);
+  static const deepBlue = Color(0xFF123A9B);
+  static const background = Color(0xFFF1F3F7);
+  static const tint = Color(0xFFE7EEFF);
+}
+
+ThemeData buildWorkerTheme(ThemeData base) => base.copyWith(
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: WorkerColors.blue,
+    primary: WorkerColors.blue,
+    surface: Colors.white,
+  ),
+  scaffoldBackgroundColor: WorkerColors.background,
+  appBarTheme: base.appBarTheme.copyWith(
+    backgroundColor: WorkerColors.background,
+  ),
+);
+
 ThemeData buildAppTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: AppColors.teal,

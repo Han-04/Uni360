@@ -9,7 +9,10 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/phone_viewport.dart';
 import 'features/corrective/corrective_access.dart';
 import 'features/corrective/corrective_repository.dart';
+import 'features/preventive/admin/admin_data.dart';
 import 'features/preventive/data/assigned_work_repository.dart';
+import 'features/preventive/data/preventive_alert_repository.dart';
+import 'features/workforce/worker_leave_repository.dart';
 import 'features/workforce/worker_profile_repository.dart';
 import 'shared/account/supabase_account_repository.dart';
 
@@ -48,7 +51,10 @@ Future<void> main() async {
       loadWorkerProfile: WorkerProfileRepository(client).load,
       loadAssignedWork: work.load,
       workActions: work,
+      alerts: PreventiveAlertRepository(client),
+      leave: WorkerLeaveRepository(client),
       corrective: CorrectiveRepository(client),
+      administration: kIsWeb ? AdminData(client) : null,
       initialRecovery:
           initialLink != null &&
           isCorrectiveRecoveryUri(initialLink) &&

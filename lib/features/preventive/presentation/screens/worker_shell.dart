@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/widgets/curved_back_button.dart';
+
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/common.dart';
@@ -34,6 +36,7 @@ class _WorkerShellState extends State<WorkerShell> {
     listenable: widget.controller,
     builder: (context, _) => Scaffold(
       appBar: AppBar(
+        leading: CurvedBackButton.forRoute(context),
         title: Text(
           ['Uni360', 'My work orders', 'Notifications', 'My profile'][_index],
           style: const TextStyle(fontWeight: FontWeight.w800),

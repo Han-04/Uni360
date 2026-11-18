@@ -42,17 +42,17 @@ class CorrectiveHero extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.icon = Icons.handyman_outlined,
+    this.gradientColors = const [Color(0xFF10243D), Color(0xFF154D59)],
   });
   final String title, subtitle;
   final IconData icon;
+  final List<Color> gradientColors;
 
   @override
   Widget build(BuildContext context) => Container(
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFF10243D), Color(0xFF154D59)],
-      ),
+      gradient: LinearGradient(colors: gradientColors),
       borderRadius: BorderRadius.circular(22),
     ),
     child: Stack(
