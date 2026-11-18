@@ -6,6 +6,20 @@ import 'corrective_repository.dart';
 const correctiveAccent = Color(0xFFC3472E);
 const correctiveTint = Color(0xFFFFEDE7);
 
+MaterialPageRoute<T> correctivePage<T>(
+  BuildContext context, {
+  required WidgetBuilder builder,
+  ThemeData? theme,
+}) {
+  final pageTheme = theme ?? Theme.of(context);
+  return MaterialPageRoute<T>(
+    builder: (_) => Theme(
+      data: pageTheme,
+      child: Builder(builder: builder),
+    ),
+  );
+}
+
 String correctiveTime(DateTime value) {
   final date = value.toUtc().add(const Duration(hours: 8));
   final month = [
@@ -128,7 +142,9 @@ class CorrectiveBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      color: alert ? correctiveTint : const Color(0xFFE7F3F1),
+      color: alert
+          ? correctiveTint
+          : Theme.of(context).colorScheme.primary.withValues(alpha: .10),
       borderRadius: BorderRadius.circular(30),
     ),
     child: Padding(
@@ -136,7 +152,9 @@ class CorrectiveBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          color: alert ? const Color(0xFF9D3320) : const Color(0xFF11665C),
+          color: alert
+              ? const Color(0xFF9D3320)
+              : Theme.of(context).colorScheme.primary,
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
@@ -158,11 +176,15 @@ class IncidentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFFE5F3F1) : Colors.white,
+    color: selected
+        ? Theme.of(context).colorScheme.primary.withValues(alpha: .10)
+        : Colors.white,
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
       side: BorderSide(
-        color: selected ? AppColors.teal : const Color(0xFFE0E6EE),
+        color: selected
+            ? Theme.of(context).colorScheme.primary
+            : const Color(0xFFE0E6EE),
       ),
     ),
     clipBehavior: Clip.antiAlias,
@@ -262,7 +284,7 @@ class CorrectiveMessage extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: AppColors.teal),
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 10),
         Expanded(child: Text(message)),
         if (onRetry != null)
@@ -288,9 +310,13 @@ class CorrectiveHistory extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 5, right: 10),
-                  child: Icon(Icons.circle, size: 9, color: AppColors.teal),
+                Padding(
+                  padding: const EdgeInsets.only(top: 5, right: 10),
+                  child: Icon(
+                    Icons.circle,
+                    size: 9,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
                 Expanded(
                   child: Column(

@@ -6,6 +6,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/common.dart';
+import '../../core/widgets/curved_back_button.dart';
+import '../../core/widgets/worker_bottom_navigation.dart';
 import '../../shared/account/account.dart';
 import 'corrective_facility_scanner.dart';
 import 'corrective_notifications.dart';
@@ -13,16 +17,25 @@ import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 import 'incident_report_screen.dart';
 
+enum CorrectiveMobileTab {
+  assigned(WorkerDestination('Assigned', Icons.assignment_outlined)),
+  reports(WorkerDestination('My reports', Icons.description_outlined)),
+  updates(WorkerDestination('Updates', Icons.notifications_outlined));
+
+  const CorrectiveMobileTab(this.destination);
+  final WorkerDestination destination;
+}
+
 class CorrectiveMobile extends StatefulWidget {
   const CorrectiveMobile({
     super.key,
     required this.repository,
     required this.account,
-    this.initialTab = 0,
+    this.initialTab = CorrectiveMobileTab.assigned,
   });
   final CorrectiveRepository repository;
   final Account account;
-  final int initialTab;
+  final CorrectiveMobileTab initialTab;
 
   @override
   State<CorrectiveMobile> createState() => _CorrectiveMobileState();
@@ -30,10 +43,14 @@ class CorrectiveMobile extends StatefulWidget {
 
 class _CorrectiveMobileState extends State<CorrectiveMobile>
     with WidgetsBindingObserver {
-  late int _tab =
-      widget.initialTab == 0 && widget.account.role == AccountRole.reporter
-      ? 1
-      : widget.initialTab;
+  late final _tabs = [
+    if (widget.account.role == AccountRole.worker) CorrectiveMobileTab.assigned,
+    CorrectiveMobileTab.reports,
+    CorrectiveMobileTab.updates,
+  ];
+  late CorrectiveMobileTab _tab = _tabs.contains(widget.initialTab)
+      ? widget.initialTab
+      : _tabs.first;
   late final RealtimeChannel _channel;
   List<CorrectiveIncident>? _items;
   String? _error;
@@ -86,7 +103,8 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
 
   Future<void> _open(String id) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      correctivePage<void>(
+        context,
         builder: (_) => CorrectiveJobScreen(
           repository: widget.repository,
           account: widget.account,
@@ -99,17 +117,18 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
 
   Future<void> _report() async {
     final result = await Navigator.of(context).push(
-      MaterialPageRoute<IncidentReportResult>(
+      correctivePage<IncidentReportResult>(
+        context,
         builder: (_) => IncidentReportScreen(widget.repository),
       ),
     );
     if (!mounted || result == null) return;
-    _selectTab(1);
+    _selectTab(CorrectiveMobileTab.reports);
     unawaited(_load());
     if (result.openDetails) await _open(result.id);
   }
 
-  void _selectTab(int tab) {
+  void _selectTab(CorrectiveMobileTab tab) {
     if (tab == _tab) return;
     setState(() {
       _tab = tab;
@@ -119,7 +138,7 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
   }
 
   Future<void> _refreshCurrentTab() async {
-    if (_tab == 2) {
+    if (_tab == CorrectiveMobileTab.updates) {
       setState(() => _updatesRefresh++);
       return;
     }
@@ -128,28 +147,87 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
 
   @override
   Widget build(BuildContext context) {
+    final showingUpdates = _tab == CorrectiveMobileTab.updates;
+    final compact = MediaQuery.sizeOf(context).width < 375;
+    final title = showingUpdates
+        ? (compact ? 'Updates' : 'Corrective updates')
+        : (compact ? 'Corrective' : 'Corrective Maintenance');
+    return Scaffold(
+      appBar: AppBar(
+        leading: CurvedBackButton.forRoute(context),
+        title: Text(title),
+        actions: [
+          if (showingUpdates)
+            IconButton(
+              tooltip: 'Report an incident',
+              onPressed: _report,
+              icon: const Icon(Icons.add),
+            ),
+          IconButton(
+            tooltip: showingUpdates ? 'Refresh updates' : 'Refresh incidents',
+            onPressed: _refreshCurrentTab,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: _refreshCurrentTab,
+          child: ListView(
+            key: ValueKey(_tab),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            children: showingUpdates
+                ? [
+                    CorrectiveNotifications(
+                      key: ValueKey(_updatesRefresh),
+                      repository: widget.repository,
+                      openIncident: _open,
+                      emptyState: const EmptyState(
+                        title: 'No updates yet',
+                        message:
+                            'Incident and assignment updates will appear here.',
+                        illustration: Image(
+                          image: AssetImage(
+                            'assets/notifications/empty-mailbox.png',
+                          ),
+                          width: 104,
+                          height: 120,
+                          excludeFromSemantics: true,
+                        ),
+                      ),
+                    ),
+                  ]
+                : _incidentList(),
+          ),
+        ),
+      ),
+      bottomNavigationBar: WorkerBottomNavigation(
+        key: const ValueKey('corrective-footer'),
+        destinations: [for (final tab in _tabs) tab.destination],
+        selectedIndex: _tabs.indexOf(_tab),
+        onDestinationSelected: (index) => _selectTab(_tabs[index]),
+      ),
+    );
+  }
+
+  List<Widget> _incidentList() {
+    final assigned = _tab == CorrectiveMobileTab.assigned;
     final actor = widget.account.id;
-    final all = (_items ?? [])
-        .where(
-          (incident) => switch (_tab) {
-            0 => incident.workerId == actor,
-            1 => incident.reporterId == actor,
-            _ => false,
-          },
-        )
-        .toList();
-    final items = all
-        .where(
-          (incident) =>
-              (_priority == null || incident.urgency == _priority) &&
-              (_status == null ||
-                  (incident.data['withdrawn_at'] == null
-                          ? incident.status
-                          : 'withdrawn') ==
-                      _status),
-        )
-        .toList();
-    if (_tab == 0) {
+    final all = (_items ?? []).where((incident) {
+      return assigned
+          ? incident.workerId == actor
+          : incident.reporterId == actor;
+    }).toList();
+    final items = all.where((incident) {
+      final status = incident.data['withdrawn_at'] == null
+          ? incident.status
+          : 'withdrawn';
+      return (_priority == null || incident.urgency == _priority) &&
+          (_status == null || status == _status);
+    }).toList();
+    if (assigned) {
       items.sort((a, b) {
         final priority = correctiveUrgencies
             .indexOf(b.urgency)
@@ -157,153 +235,167 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
         return priority == 0 ? b.created.compareTo(a.created) : priority;
       });
     }
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Corrective Maintenance'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh incidents',
-            onPressed: _refreshCurrentTab,
-            icon: const Icon(Icons.refresh),
+    final open = all
+        .where(
+          (incident) => !closedCorrectiveStatuses.contains(incident.status),
+        )
+        .length;
+    final resolved = all
+        .where((incident) => incident.status == 'resolved')
+        .length;
+
+    return [
+      _IncidentOverview(
+        title: assigned ? 'Incident response' : 'Reports overview',
+        icon: assigned ? Icons.handyman_outlined : Icons.description_outlined,
+        summary: _items == null ? null : '$open open · $resolved resolved',
+      ),
+      correctiveGap(),
+      FilledButton.icon(
+        onPressed: _report,
+        icon: const Icon(Icons.add),
+        label: const Text('Report an incident'),
+      ),
+      SectionHeading(assigned ? 'Assigned incidents' : 'Report history'),
+      if (_loading && _items == null) const LinearProgressIndicator(),
+      if (_error != null) ...[
+        CorrectiveMessage(
+          _items == null
+              ? _error!
+              : 'Showing the last loaded incidents. $_error',
+          onRetry: _load,
+        ),
+        correctiveGap(),
+      ],
+      if (all.isNotEmpty) ...[_filters(), correctiveGap(10)],
+      if (!_loading && _error == null && items.isEmpty)
+        if (all.isNotEmpty)
+          const CorrectiveMessage('No incidents match these filters.')
+        else
+          EmptyState(
+            icon: assigned
+                ? Icons.assignment_outlined
+                : Icons.description_outlined,
+            title: assigned ? 'No assignments yet' : 'No reports yet',
+            message: assigned
+                ? 'New corrective assignments will appear here.'
+                : 'Your incident reports will appear here.',
+          ),
+      for (final incident in items)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: IncidentTile(incident, onOpen: () => _open(incident.id)),
+        ),
+    ];
+  }
+
+  Widget _filters() => SurfaceCard(
+    padding: EdgeInsets.zero,
+    child: ExpansionTile(
+      key: ValueKey(_tab),
+      shape: const Border(),
+      collapsedShape: const Border(),
+      leading: const Icon(Icons.tune_outlined),
+      title: Text(
+        _priority == null && _status == null ? 'Filters' : 'Filters applied',
+      ),
+      childrenPadding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      children: [
+        DropdownButtonFormField<String>(
+          key: ValueKey(('priority', _priority)),
+          initialValue: _priority ?? '',
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Priority'),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('All priorities')),
+            for (final value in correctiveUrgencies)
+              DropdownMenuItem(value: value, child: Text(value)),
+          ],
+          onChanged: (value) =>
+              setState(() => _priority = value == '' ? null : value),
+        ),
+        correctiveGap(),
+        DropdownButtonFormField<String>(
+          key: ValueKey(('status', _status)),
+          initialValue: _status ?? '',
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Status'),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('All statuses')),
+            for (final entry in correctiveStatuses.entries)
+              DropdownMenuItem(
+                value: entry.key,
+                child: Text(entry.value, overflow: TextOverflow.ellipsis),
+              ),
+            const DropdownMenuItem(
+              value: 'withdrawn',
+              child: Text('Withdrawn'),
+            ),
+          ],
+          onChanged: (value) =>
+              setState(() => _status = value == '' ? null : value),
+        ),
+        if (_priority != null || _status != null)
+          TextButton(
+            onPressed: () => setState(() {
+              _priority = null;
+              _status = null;
+            }),
+            child: const Text('Clear filters'),
+          ),
+      ],
+    ),
+  );
+}
+
+class _IncidentOverview extends StatelessWidget {
+  const _IncidentOverview({
+    required this.title,
+    required this.icon,
+    this.summary,
+  });
+
+  final String title;
+  final IconData icon;
+  final String? summary;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [WorkerColors.blue, WorkerColors.deepBlue],
+      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(17),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 25),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (summary case final value?)
+                  Text(value, style: const TextStyle(color: Color(0xFFE5EDFF))),
+              ],
+            ),
           ),
         ],
       ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refreshCurrentTab,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-            children: [
-              const CorrectiveHero(
-                title: 'Incident response',
-                subtitle: 'Report facility faults, track dispatch and complete repairs.',
-              ),
-              correctiveGap(16),
-              FilledButton.icon(
-                onPressed: _report,
-                icon: const Icon(Icons.add),
-                label: const Text('Report an incident'),
-              ),
-              correctiveGap(),
-              SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: [
-                  if (widget.account.role == AccountRole.worker)
-                    const ButtonSegment(value: 0, label: Text('Assigned')),
-                  const ButtonSegment(value: 1, label: Text('My reports')),
-                  const ButtonSegment(value: 2, label: Text('Updates')),
-                ],
-                selected: {_tab},
-                onSelectionChanged: (value) => _selectTab(value.first),
-              ),
-              correctiveGap(16),
-              if (_tab == 2)
-                CorrectiveNotifications(
-                  key: ValueKey(_updatesRefresh),
-                  repository: widget.repository,
-                  openIncident: _open,
-                ),
-              if (_tab < 2 && _loading && _items == null)
-                const LinearProgressIndicator(),
-              if (_tab < 2 && _error != null) ...[
-                CorrectiveMessage(
-                  _items == null
-                      ? _error!
-                      : 'Showing the last loaded incidents. $_error',
-                  onRetry: _load,
-                ),
-                correctiveGap(),
-              ],
-              if (_tab < 2 && all.isNotEmpty) ...[
-                Text(
-                  '${all.where((incident) => !closedCorrectiveStatuses.contains(incident.status)).length} open · '
-                  '${all.where((incident) => incident.status == 'resolved').length} resolved',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                ExpansionTile(
-                  key: ValueKey(_tab),
-                  title: const Text('Filter by priority and status'),
-                  childrenPadding: const EdgeInsets.fromLTRB(0, 10, 0, 12),
-                  children: [
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(('priority', _priority)),
-                      initialValue: _priority ?? '',
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Priority'),
-                      items: [
-                        const DropdownMenuItem(
-                          value: '',
-                          child: Text('All priorities'),
-                        ),
-                        for (final value in correctiveUrgencies)
-                          DropdownMenuItem(value: value, child: Text(value)),
-                      ],
-                      onChanged: (value) => setState(
-                        () => _priority = value == '' ? null : value,
-                      ),
-                    ),
-                    correctiveGap(12),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(('status', _status)),
-                      initialValue: _status ?? '',
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Status'),
-                      items: [
-                        const DropdownMenuItem(
-                          value: '',
-                          child: Text('All statuses'),
-                        ),
-                        for (final entry in correctiveStatuses.entries)
-                          DropdownMenuItem(
-                            value: entry.key,
-                            child: Text(
-                              entry.value,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        const DropdownMenuItem(
-                          value: 'withdrawn',
-                          child: Text('Withdrawn'),
-                        ),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _status = value == '' ? null : value),
-                    ),
-                    if (_priority != null || _status != null)
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _priority = null;
-                          _status = null;
-                        }),
-                        child: const Text('Clear filters'),
-                      ),
-                  ],
-                ),
-                correctiveGap(8),
-              ],
-              if (_tab < 2 && !_loading && _error == null && items.isEmpty)
-                CorrectiveMessage(
-                  all.isNotEmpty
-                      ? 'No incidents match these filters.'
-                      : _tab == 0
-                      ? 'New corrective assignments will appear here.'
-                      : 'Your incident reports will appear here.',
-                ),
-              for (final incident in items)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: IncidentTile(
-                    incident,
-                    onOpen: () => _open(incident.id),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }
 
 class CorrectiveJobScreen extends StatefulWidget {
@@ -422,7 +514,8 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
     );
     if (!mounted || scan != true) return;
     final qr = await Navigator.of(context).push(
-      MaterialPageRoute<String>(
+      correctivePage<String>(
+        context,
         builder: (_) => const CorrectiveFacilityScanner(),
       ),
     );
@@ -583,7 +676,8 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
 
   Future<void> _editPending(CorrectiveIncident incident) async {
     final updated = await Navigator.of(context).push<IncidentReportResult>(
-      MaterialPageRoute(
+      correctivePage<IncidentReportResult>(
+        context,
         builder: (_) =>
             IncidentReportScreen(widget.repository, pending: incident),
       ),
@@ -805,6 +899,7 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: CurvedBackButton.forRoute(context),
       title: const Text('Incident details'),
       actions: [
         IconButton(

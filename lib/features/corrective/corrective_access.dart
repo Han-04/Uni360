@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/widgets/curved_back_button.dart';
 import 'corrective_widgets.dart';
 
 final _campusEmail = RegExp(
@@ -127,6 +128,7 @@ class _CorrectiveAccessScreenState extends State<CorrectiveAccessScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: CurvedBackButton.forRoute(context),
       title: Text(
         widget.register ? 'Create a reporter account' : 'Forgot password',
       ),

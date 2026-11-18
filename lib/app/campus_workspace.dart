@@ -63,13 +63,17 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
     }
   }
 
-  Future<void> _corrective({int tab = 0}) async {
+  Future<void> _corrective({
+    CorrectiveMobileTab tab = CorrectiveMobileTab.assigned,
+  }) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+      correctivePage<void>(
+        context,
+        theme: buildWorkerTheme(Theme.of(context)),
         builder: (_) => CorrectiveMobile(
           repository: widget.corrective,
           account: widget.account,
-          initialTab: _reporter && tab == 0 ? 1 : tab,
+          initialTab: tab,
         ),
       ),
     );
@@ -184,7 +188,8 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 16),
                             child: FilledButton.icon(
-                              onPressed: () => _corrective(tab: 2),
+                              onPressed: () =>
+                                  _corrective(tab: CorrectiveMobileTab.updates),
                               icon: const Icon(
                                 Icons.notifications_active_outlined,
                               ),

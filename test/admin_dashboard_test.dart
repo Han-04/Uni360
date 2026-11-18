@@ -170,7 +170,7 @@ Future<void> _enterAdmin(
 
 void main() {
   testWidgets('Administrator can open the overdue alert list', (tester) async {
-    await enterAdmin(tester, AccountRole.administrator);
+    await _enterAdmin(tester, AccountRole.administrator);
     expect(find.byType(Badge), findsOneWidget);
     await tester.tap(find.text('Overdue tasks'));
     await tester.pumpAndSettle();
@@ -243,7 +243,7 @@ void main() {
     tester,
   ) async {
     final admin = _TestAdministration();
-    await enterAdmin(tester, AccountRole.superAdministrator, data: admin);
+    await _enterAdmin(tester, AccountRole.superAdministrator, data: admin);
     await tester.tap(find.text('Facilities').first);
     await tester.pumpAndSettle();
 
@@ -299,7 +299,7 @@ void main() {
   testWidgets('Scheduling and approvals start at the top of the dashboard', (
     tester,
   ) async {
-    await enterAdmin(tester, AccountRole.administrator);
+    await _enterAdmin(tester, AccountRole.administrator);
     await tester.tap(find.text('Facilities').first);
     await tester.pumpAndSettle();
     final top = tester.getTopLeft(find.text('Facilities').last).dy;

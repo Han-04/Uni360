@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/curved_back_button.dart';
 import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 
@@ -127,7 +128,10 @@ class _CorrectiveCategoriesScreenState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Maintenance categories')),
+    appBar: AppBar(
+      leading: CurvedBackButton.forRoute(context),
+      title: const Text('Maintenance categories'),
+    ),
     body: SafeArea(
       child: Center(
         child: ConstrainedBox(

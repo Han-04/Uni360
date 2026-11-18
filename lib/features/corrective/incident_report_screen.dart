@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/curved_back_button.dart';
+import '../preventive/admin/admin_widgets.dart';
 import 'corrective_facility_scanner.dart';
 import 'corrective_photo_diagnostics.dart';
 import 'corrective_repository.dart';
@@ -52,7 +54,8 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
 
   Future<void> _scan() async {
     final code = await Navigator.of(context).push(
-      MaterialPageRoute<String>(
+      correctivePage<String>(
+        context,
         builder: (_) => const CorrectiveFacilityScanner(),
       ),
     );
@@ -304,6 +307,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: CurvedBackButton.forRoute(context),
       title: Text(
         widget.pending == null ? 'Report an incident' : 'Edit pending report',
       ),
@@ -344,12 +348,20 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
                   children: [
-                    const CorrectiveHero(
-                      title: 'Report a facility fault',
-                      subtitle: 'Give campus operations the location and details they need to respond.',
-                      icon: Icons.add_alert_outlined,
-                    ),
-                    correctiveGap(20),
+                    if (widget.administrator)
+                      const AdminHeading('Report a facility fault')
+                    else ...[
+                      const CorrectiveHero(
+                        title: 'Report a facility fault',
+                        subtitle: 'Give campus operations the location and details they need to respond.',
+                        icon: Icons.add_alert_outlined,
+                        gradientColors: [
+                          WorkerColors.blue,
+                          WorkerColors.deepBlue,
+                        ],
+                      ),
+                      correctiveGap(20),
+                    ],
                     if (locations.isEmpty && widget.pending == null)
                       const CorrectiveMessage(
                         'Ask an administrator to add a campus facility before submitting a report.',

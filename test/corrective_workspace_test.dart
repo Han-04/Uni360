@@ -34,6 +34,7 @@ class _CorrectiveFixture extends CorrectiveRepository {
   String status;
   bool withdrawn = false;
   final actions = <String>[];
+  final updates = <CorrectiveRow>[];
   static const id = 'test-incident';
 
   CorrectiveIncident get incident => CorrectiveIncident({
@@ -59,6 +60,9 @@ class _CorrectiveFixture extends CorrectiveRepository {
 
   @override
   Future<int> unreadNotifications() async => 0;
+
+  @override
+  Future<List<CorrectiveRow>> notifications() async => updates;
 
   @override
   Future<List<CorrectiveIncident>> list(
@@ -246,6 +250,9 @@ void main() {
       );
       expect(find.text('Preventive Maintenance'), findsNothing);
       await _tapVisible(tester, find.text('Corrective Maintenance'));
+      final theme = Theme.of(tester.element(find.text('Reports overview')));
+      expect(theme.colorScheme.primary, WorkerColors.blue);
+      expect(theme.scaffoldBackgroundColor, WorkerColors.background);
       expect(find.text('My reports'), findsOneWidget);
       expect(find.text('Report an incident'), findsOneWidget);
       expect(find.text('Assigned'), findsNothing);
@@ -297,10 +304,18 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
     expect(find.text('Worker accounts'), findsOneWidget);
+    final dashboardFont = Theme.of(tester.element(find.text('Worker accounts')))
+        .textTheme
+        .bodyMedium
+        ?.fontFamily;
 
     await tester.tap(find.text('Corrective Maintenance'));
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(CorrectiveAdmin)).width, 1280);
+    final correctiveFont = Theme.of(
+      tester.element(find.text('Incident command centre')),
+    ).textTheme.bodyMedium?.fontFamily;
+    expect(correctiveFont, dashboardFont);
     await _tapVisible(tester, find.text('Burst pipe'));
     expect(find.text('Review and approve'), findsOneWidget);
     await tester.tap(find.byTooltip('Back'));
@@ -344,6 +359,10 @@ void main() {
     final withdraw = find.widgetWithText(FilledButton, 'Withdraw report');
     final trigger = tester.widget<FilledButton>(withdraw);
     expect(
+      Theme.of(tester.element(withdraw)).colorScheme.primary,
+      WorkerColors.blue,
+    );
+    expect(
       trigger.style?.backgroundColor?.resolve({}),
       Theme.of(tester.element(withdraw)).colorScheme.error,
     );
@@ -371,7 +390,7 @@ void main() {
     );
     await _signIn(tester, accounts, repository, width: 320);
     await _tapVisible(tester, find.text('Corrective Maintenance'));
-    await _tapVisible(tester, find.text('Filter by priority and status'));
+    await _tapVisible(tester, find.text('Filters'));
     await _tapVisible(tester, find.text('All priorities'));
     await tester.tap(find.text('Low').last);
     await tester.pumpAndSettle();
@@ -382,6 +401,49 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'Corrective footer switches the worker sections on a narrow phone',
+    (tester) async {
+      final accounts = TestAccounts();
+      final repository =
+          _CorrectiveFixture(
+              accounts.profile.id,
+              status: 'assigned',
+              ownsReport: true,
+            )
+            ..updates.add({
+              'title': 'Assigned to you',
+              'incident_title': 'Burst pipe',
+              'created_at': '2026-11-12T04:00:00Z',
+            });
+      await _signIn(tester, accounts, repository, width: 320);
+      await _tapVisible(tester, find.text('Corrective Maintenance'));
+      final footer = find.byKey(const ValueKey('corrective-footer'));
+      final footerTop = tester.getTopLeft(footer).dy;
+      expect(
+        tester.getBottomLeft(find.byType(ListView)).dy,
+        lessThanOrEqualTo(footerTop),
+      );
+      expect(find.text('Assigned incidents'), findsOneWidget);
+
+      await tester.tap(find.text('My reports'));
+      await tester.pumpAndSettle();
+      expect(find.text('Report history'), findsOneWidget);
+      expect(find.text('Report an incident'), findsOneWidget);
+
+      await tester.tap(find.text('Updates'));
+      await tester.pumpAndSettle();
+      expect(find.text('Assigned to you'), findsOneWidget);
+      expect(find.text('Report history'), findsNothing);
+      expect(tester.getTopLeft(footer).dy, footerTop);
+
+      await tester.tap(find.text('Assigned'));
+      await tester.pumpAndSettle();
+      expect(find.text('Assigned incidents'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'Worker switches maintenance modules and starts a verified repair',

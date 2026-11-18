@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/widgets/curved_back_button.dart';
 import 'corrective_widgets.dart';
 
 class CorrectiveFacilityScanner extends StatefulWidget {
@@ -25,7 +26,10 @@ class _CorrectiveFacilityScannerState extends State<CorrectiveFacilityScanner> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Scan facility QR')),
+    appBar: AppBar(
+      leading: CurvedBackButton.forRoute(context),
+      title: const Text('Scan facility QR'),
+    ),
     body: Stack(
       fit: StackFit.expand,
       children: [

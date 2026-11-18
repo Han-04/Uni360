@@ -8,6 +8,7 @@ import '../core/widgets/phone_viewport.dart';
 import '../features/corrective/corrective_access.dart';
 import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_repository.dart';
+import '../features/corrective/corrective_widgets.dart';
 import '../features/preventive/admin/admin_dashboard.dart';
 import '../features/preventive/admin/admin_data.dart';
 import '../features/preventive/data/assigned_work_repository.dart';
@@ -132,6 +133,7 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
       routes: {
         adminPortalRoute: (context) {
           final data = widget.administration;
+          final repository = widget.corrective;
           return Theme(
             data: buildPreventiveTheme(Theme.of(context)),
             child: data == null
@@ -143,25 +145,22 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
                       ),
                     ),
                   )
-                : AdminDashboard(accounts: _accounts, data: data),
-          );
-        },
-        correctiveAdminRoute: (context) {
-          final account = _accounts.account;
-          final repository = widget.corrective;
-          return AdminDashboard(
-            accounts: _accounts,
-            data: data,
-            openCorrective: repository == null
-                ? null
-                : (context, account) => Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (context) => CorrectiveAdmin(
-                        repository: repository,
-                        administratorId: account.id,
-                        onReturnToPortal: Navigator.of(context).pop,
-                      ),
-                    ),
+                : AdminDashboard(
+                    accounts: _accounts,
+                    data: data,
+                    openCorrective: repository == null
+                        ? null
+                        : (context, account) =>
+                              Navigator.of(context).push<void>(
+                                correctivePage<void>(
+                                  context,
+                                  builder: (context) => CorrectiveAdmin(
+                                    repository: repository,
+                                    administratorId: account.id,
+                                    onReturnToPortal: Navigator.of(context).pop,
+                                  ),
+                                ),
+                              ),
                   ),
           );
         },
@@ -186,7 +185,9 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
             ? null
             : (context, register) {
                 Navigator.of(context).push(
-                  MaterialPageRoute<void>(
+                  correctivePage<void>(
+                    context,
+                    theme: buildWorkerTheme(Theme.of(context)),
                     builder: (_) => CorrectiveAccessScreen(
                       client: corrective.client,
                       register: register,

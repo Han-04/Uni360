@@ -12,10 +12,12 @@ class CorrectiveNotifications extends StatefulWidget {
     required this.repository,
     required this.openIncident,
     this.scrollable = false,
+    this.emptyState,
   });
   final CorrectiveRepository repository;
   final ValueChanged<String> openIncident;
   final bool scrollable;
+  final Widget? emptyState;
 
   @override
   State<CorrectiveNotifications> createState() =>
@@ -78,9 +80,10 @@ class _CorrectiveNotificationsState extends State<CorrectiveNotifications> {
       if (!snapshot.hasData) return const LinearProgressIndicator();
       final notifications = snapshot.data!;
       if (notifications.isEmpty) {
-        return const CorrectiveMessage(
-          'Incident and assignment updates will appear here.',
-        );
+        return widget.emptyState ??
+            const CorrectiveMessage(
+              'Incident and assignment updates will appear here.',
+            );
       }
       final items = [
         for (final update in notifications)

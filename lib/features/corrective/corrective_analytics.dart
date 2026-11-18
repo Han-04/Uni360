@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../core/widgets/curved_back_button.dart';
 import 'corrective_pdf_download_stub.dart'
     if (dart.library.js_interop) 'corrective_pdf_download_web.dart';
 import 'corrective_repository.dart';
@@ -72,7 +73,10 @@ class _CorrectiveAnalyticsState extends State<CorrectiveAnalyticsScreen> {
     );
     final period = _period == null ? 'All time' : 'Last $_period days';
     return Scaffold(
-      appBar: AppBar(title: const Text('Corrective analytics')),
+      appBar: AppBar(
+        leading: CurvedBackButton.forRoute(context),
+        title: const Text('Corrective analytics'),
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 960),

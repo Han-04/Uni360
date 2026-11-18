@@ -6,6 +6,8 @@ import 'package:qr/qr.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/curved_back_button.dart';
+import '../preventive/admin/admin_widgets.dart';
 import 'corrective_analytics.dart';
 import 'corrective_case_pdf.dart';
 import 'corrective_categories_screen.dart';
@@ -80,7 +82,8 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
 
   Future<void> _report() async {
     final result = await Navigator.of(context).push(
-      MaterialPageRoute<IncidentReportResult>(
+      correctivePage<IncidentReportResult>(
+        context,
         builder: (_) =>
             IncidentReportScreen(widget.repository, administrator: true),
       ),
@@ -96,9 +99,13 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Review incident')),
+      correctivePage<void>(
+        context,
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            leading: CurvedBackButton.forRoute(context),
+            title: const Text('Review incident'),
+          ),
           body: _AdminIncident(
             repository: widget.repository,
             id: id,
@@ -140,15 +147,16 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       leading: widget.onReturnToPortal == null
-          ? null
-          : BackButton(onPressed: widget.onReturnToPortal),
+          ? CurvedBackButton.forRoute(context)
+          : CurvedBackButton(onPressed: widget.onReturnToPortal),
       title: const Text('Corrective Maintenance'),
       actions: [
         IconButton(
           tooltip: 'Manage maintenance categories',
           icon: const Icon(Icons.category_outlined),
           onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
+            correctivePage<void>(
+              context,
               builder: (_) => CorrectiveCategoriesScreen(widget.repository),
             ),
           ),
@@ -285,12 +293,10 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
                   24,
                 ),
                 children: [
-                  const CorrectiveHero(
-                    title: 'Incident command centre',
+                  const AdminHeading(
+                    'Incident command centre',
                     subtitle: 'Review campus faults, dispatch workers and verify completed repairs.',
-                    icon: Icons.emergency_outlined,
                   ),
-                  correctiveGap(14),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -315,7 +321,8 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
                   if (kIsWeb && snapshot.hasData)
                     OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
+                        correctivePage<void>(
+                          context,
                           builder: (_) => CorrectiveAnalyticsScreen(rows),
                         ),
                       ),

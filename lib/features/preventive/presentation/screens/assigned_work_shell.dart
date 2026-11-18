@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +7,7 @@ import '../../../../core/widgets/curved_back_button.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/common.dart';
+import '../../../../core/widgets/worker_bottom_navigation.dart';
 import '../../../../shared/account/account_controller.dart';
 import '../../../../shared/account/presentation/account_profile_screen.dart';
 import '../../data/assigned_work_repository.dart';
@@ -379,148 +379,23 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
           },
         ),
       ),
-      bottomNavigationBar: _footer(),
+      bottomNavigationBar: WorkerBottomNavigation(
+        key: const ValueKey('worker-footer'),
+        selectedIndex: _tab,
+        onDestinationSelected: _selectTab,
+        destinations: [
+          const WorkerDestination('Home', Icons.home_outlined),
+          const WorkerDestination('My tasks', Icons.assignment_outlined),
+          WorkerDestination(
+            'Notifications',
+            Icons.notifications_outlined,
+            unread: _alerts.any((alert) => !alert.read),
+          ),
+          const WorkerDestination('Profile', Icons.person_outline),
+        ],
+      ),
     ),
   );
-
-  Widget _footer() {
-    final unread = _alerts.any((alert) => !alert.read);
-    return SafeArea(
-      key: const ValueKey('worker-footer'),
-      top: false,
-      minimum: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(36),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x26192D48),
-              blurRadius: 22,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(36),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xCFFFFFFF), Color(0xADDBE5F5)],
-                ),
-                border: Border.all(color: const Color(0xCFFFFFFF)),
-                borderRadius: BorderRadius.circular(36),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: SizedBox(
-                  height: 72,
-                  child: Row(
-                    children: [
-                      _footerTab(0, 'Home', Icons.home_outlined),
-                      _footerTab(1, 'My tasks', Icons.assignment_outlined),
-                      _footerTab(
-                        2,
-                        'Notifications',
-                        Icons.notifications_outlined,
-                        unread: unread,
-                      ),
-                      _footerTab(3, 'Profile', Icons.person_outline),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _footerTab(
-    int index,
-    String label,
-    IconData icon, {
-    bool unread = false,
-  }) {
-    final selected = _tab == index;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 200);
-    final color = selected ? WorkerColors.deepBlue : AppColors.navy;
-    void onTap() => _selectTab(index);
-    return Expanded(
-      child: Semantics(
-        button: true,
-        selected: selected,
-        label: unread ? '$label, unread notifications' : label,
-        onTap: onTap,
-        child: ExcludeSemantics(
-          child: InkWell(
-            onTap: onTap,
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: AnimatedContainer(
-                  duration: duration,
-                  constraints: const BoxConstraints(
-                    minWidth: 60,
-                    minHeight: 55,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                  decoration: ShapeDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: selected
-                          ? const [Color(0x88A1B7E4), Color(0xDCFFFFFF)]
-                          : const [Colors.transparent, Colors.transparent],
-                    ),
-                    shape: StadiumBorder(
-                      side: BorderSide(
-                        color: selected
-                            ? const Color(0x688195BB)
-                            : Colors.transparent,
-                      ),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Badge(
-                        isLabelVisible: unread,
-                        child: Icon(icon, size: 22, color: color),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 11,
-                          fontWeight: selected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _homeSummary(BuildContext context, List<AssignedWork> orders) {
     final profile = widget.accounts.account;
