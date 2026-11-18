@@ -45,24 +45,22 @@ class AccountController extends ChangeNotifier {
         await _repository.signOut();
         return;
       }
-      if (administratorsUsePortal && signedIn.role.isAdministrator) {
-        try {
-          await _repository.signOut();
-        } on Exception {
-          // The Supabase client has already cleared its local session.
-        }
-        throw const AccountException('Use Admin login on the Uni360 website.');
-      }
-      if (administratorOnly && !signedIn.role.isAdministrator) {
+      final rejection = switch ((
+        administratorOnly,
+        signedIn.role.isAdministrator,
+      )) {
+        (true, false) => 'Use an Administrator or Super Administrator account.',
+        (false, true) when administratorsUsePortal =>
+          'Use Admin login on the Uni360 website.',
+        _ => null,
+      };
+      if (rejection != null) {
         try {
           await _repository.signOut();
         } on Exception {
           // The repository clears its local session before remote sign-out.
         }
-        throw const AccountException(
-          'Use an Administrator or Super Administrator account.',
-        );
-      }
+        throw AccountException(rejection);
       }
       _account = signedIn;
       lastActivity = DateTime.now();

@@ -13,9 +13,15 @@ import 'admin_leave_requests.dart';
 import 'admin_workforce.dart';
 
 class AdminDashboard extends StatelessWidget {
-  const AdminDashboard({super.key, required this.accounts, required this.data});
+  const AdminDashboard({
+    super.key,
+    required this.accounts,
+    required this.data,
+    this.openCorrective,
+  });
   final AccountController accounts;
   final AdminData data;
+  final void Function(BuildContext, Account)? openCorrective;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -50,6 +56,7 @@ class AdminDashboard extends StatelessWidget {
         data: data,
         account: account,
         signOut: accounts.signOut,
+        openCorrective: openCorrective,
       );
     },
   );
@@ -291,10 +298,12 @@ class _Workspace extends StatefulWidget {
     required this.account,
     required this.data,
     required this.signOut,
+    this.openCorrective,
   });
   final Account account;
   final AdminData data;
   final VoidCallback signOut;
+  final void Function(BuildContext, Account)? openCorrective;
 
   @override
   State<_Workspace> createState() => _WorkspaceState();
@@ -347,6 +356,22 @@ class _WorkspaceState extends State<_Workspace> {
                     onTap: () {
                       setState(() => index = i);
                       if (compact) Navigator.of(context).pop();
+                    },
+                  ),
+                if (widget.openCorrective case final open?)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.handyman_outlined,
+                      color: Colors.white70,
+                    ),
+                    title: const Text('Corrective Maintenance'),
+                    textColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    onTap: () {
+                      if (compact) Navigator.of(context).pop();
+                      open(context, widget.account);
                     },
                   ),
               ],

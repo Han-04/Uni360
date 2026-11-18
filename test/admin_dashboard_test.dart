@@ -106,7 +106,7 @@ class _TestAdministration extends AdminData {
   };
 }
 
-Future<void> enterAdmin(
+Future<void> _enterAdmin(
   WidgetTester tester,
   AccountRole role, {
   _TestAdministration? data,
@@ -144,7 +144,7 @@ void main() {
         {'full_name': 'Enabled Worker', 'is_active': true},
         {'full_name': 'Disabled Worker', 'is_active': false},
       ]);
-    await enterAdmin(tester, AccountRole.administrator, data: data);
+    await _enterAdmin(tester, AccountRole.administrator, data: data);
     expect(find.text('Enabled Worker'), findsOneWidget);
     expect(find.text('Disabled Worker'), findsOneWidget);
     await tester.tap(find.text('All statuses'));
@@ -158,7 +158,7 @@ void main() {
   testWidgets(
     'Flutter Web keeps admin sign-in, facility hierarchy and sign-out on the admin route',
     (tester) async {
-      await enterAdmin(tester, AccountRole.administrator);
+      await _enterAdmin(tester, AccountRole.administrator);
       expect(find.text('Worker accounts'), findsOneWidget);
       expect(tester.getSize(find.byType(Scaffold)).width, 1440);
       final route = ModalRoute.of(tester.element(find.text('Worker accounts')));
@@ -195,7 +195,7 @@ void main() {
   testWidgets('Flutter Web admin login rejects worker accounts', (
     tester,
   ) async {
-    await enterAdmin(tester, AccountRole.worker);
+    await _enterAdmin(tester, AccountRole.worker);
     expect(
       find.text('Use an Administrator or Super Administrator account.'),
       findsOneWidget,

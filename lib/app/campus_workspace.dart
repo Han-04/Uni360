@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme/app_theme.dart';
 import '../core/widgets/curved_back_button.dart';
-import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_mobile.dart';
 import '../features/corrective/corrective_repository.dart';
 import '../features/corrective/corrective_widgets.dart';
@@ -38,6 +37,7 @@ class CampusWorkspace extends StatefulWidget {
 class _CampusWorkspaceState extends State<CampusWorkspace> {
   RealtimeChannel? _channel;
   Future<int>? _updates;
+  bool get _worker => widget.account.role == AccountRole.worker;
   bool get _reporter => widget.account.role == AccountRole.reporter;
 
   @override

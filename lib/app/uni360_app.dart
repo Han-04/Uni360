@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -54,7 +53,8 @@ class Uni360App extends StatefulWidget {
 class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
   late final _accounts = AccountController(
     widget.accounts,
-    administratorsUsePortal: widget.corrective != null,
+    administratorsUsePortal:
+        widget.corrective != null || widget.administration != null,
   );
   late final _adminVisible = ValueNotifier(
     widget.administration != null && Uri.base.fragment == adminPortalRoute,
@@ -104,19 +104,21 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
         _recovering ? 'corrective-recovery' : _accounts.account?.id,
       ),
       title: 'Uni360',
-      initialRoute: _adminVisible.value ? adminPortalRoute : null,
+      initialRoute: !_recovering && _adminVisible.value
+          ? adminPortalRoute
+          : null,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       navigatorObservers: [
         _AdminRouteObserver((topRoute) {
-          if (!kIsWeb) return;
           if (topRoute.settings.name == adminPortalRoute) {
             _adminEntry = topRoute;
           }
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _adminVisible.value = _adminEntry?.isActive == true &&
-                  widget.administration != null && visible;
+              _adminVisible.value =
+                  widget.administration != null &&
+                  _adminEntry?.isActive == true;
             }
           });
         }),
@@ -140,34 +142,22 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
               ),
             );
           }
-          return Scaffold(
-            appBar: AppBar(title: const Text('Uni360 Administration')),
-            body: SafeArea(
-              child: AdminPortalView(
-                correctiveBuilder: widget.corrective == null
-                    ? null
-                    : (client, administratorId, returnToPortal) =>
-                          CorrectiveAdmin(
-                            repository: CorrectiveRepository(
-                              client,
-                              actorId: administratorId,
-                            ),
-                            administratorId: administratorId,
-                            onReturnToPortal: returnToPortal,
-                          ),
-              ),
-            ),
-          );
-        },
-        correctiveAdminRoute: (context) {
-          final account = _accounts.account;
           final repository = widget.corrective;
-          if (account == null ||
-              !account.role.isAdministrator ||
-              repository == null) {
-            return _home();
-          }
-          return CorrectiveAdmin(repository: repository, account: account);
+          return AdminDashboard(
+            accounts: _accounts,
+            data: data,
+            openCorrective: repository == null
+                ? null
+                : (context, account) => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (context) => CorrectiveAdmin(
+                        repository: repository,
+                        administratorId: account.id,
+                        onReturnToPortal: Navigator.of(context).pop,
+                      ),
+                    ),
+                  ),
+          );
         },
       },
       home: _home(),
@@ -274,8 +264,6 @@ class _AdminRouteObserver extends NavigatorObserver {
 
   @override
   void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
-    if (topRoute is PageRoute) {
-      onChanged(topRoute.settings.name == adminPortalRoute);
-    }
+    onChanged(topRoute);
   }
 }

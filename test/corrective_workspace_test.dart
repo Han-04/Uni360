@@ -1,6 +1,5 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,8 +10,9 @@ import 'package:uni360/features/corrective/corrective_admin.dart';
 import 'package:uni360/features/corrective/corrective_case_pdf.dart';
 import 'package:uni360/features/corrective/corrective_photo_diagnostics.dart';
 import 'package:uni360/features/corrective/corrective_repository.dart';
+import 'package:uni360/features/preventive/admin/admin_dashboard.dart';
+import 'package:uni360/features/preventive/admin/admin_data.dart';
 import 'package:uni360/shared/account/account.dart';
-import 'package:uni360/shared/account/presentation/admin_portal_view.dart';
 
 import 'support/test_accounts.dart';
 
@@ -131,11 +131,22 @@ class _CorrectiveFixture extends CorrectiveRepository {
   }
 }
 
+class _AdminFixture extends AdminData {
+  _AdminFixture(super.client);
+
+  @override
+  Future<AdminRow> accounts(String action, AdminRow values) async => {
+    'rows': <AdminRow>[],
+    'hasNext': false,
+  };
+}
+
 Future<void> _signIn(
   WidgetTester tester,
   TestAccounts accounts,
   _CorrectiveFixture corrective, {
   double width = 390,
+  AdminData? administration,
 }) async {
   tester.view.physicalSize = Size(width, 844);
   tester.view.devicePixelRatio = 1;
@@ -146,6 +157,7 @@ Future<void> _signIn(
       accounts: accounts,
       loadAssignedWork: (_, _) async => [],
       corrective: corrective,
+      administration: administration,
     ),
   );
   expect(find.text('Welcome to Uni360'), findsOneWidget);
@@ -250,18 +262,20 @@ void main() {
       accounts.profile.id,
       status: 'reported',
     );
-    await _signIn(tester, accounts, repository, width: 1280);
+    await _signIn(
+      tester,
+      accounts,
+      repository,
+      width: 1280,
+      administration: _AdminFixture(repository.client),
+    );
     expect(find.text('Use Admin login on the Uni360 website.'), findsOneWidget);
     expect(find.text('Campus operations'), findsNothing);
 
     await _tapVisible(tester, find.text('Admin login'));
-    expect(find.byType(AdminPortalView), findsOneWidget);
-    expect(
-      tester.getSize(find.byType(AdminPortalView)).width,
-      kIsWeb ? 1280 : PhoneViewport.maxWidth,
-    );
-    expect(find.text('Uni360 Administration'), findsOneWidget);
-    expect(find.byType(TextFormField), findsNothing);
+    expect(find.byType(AdminDashboard), findsOneWidget);
+    expect(tester.getSize(find.byType(AdminDashboard)).width, 1280);
+    expect(find.text('Administrator sign-in'), findsOneWidget);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -270,6 +284,28 @@ void main() {
       tester.getSize(find.byType(SafeArea).first).width,
       PhoneViewport.maxWidth,
     );
+
+    await _tapVisible(tester, find.text('Admin login'));
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      TestAccounts.email,
+    );
+    await tester.enterText(
+      find.byType(TextFormField).last,
+      TestAccounts.password,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Worker accounts'), findsOneWidget);
+
+    await tester.tap(find.text('Corrective Maintenance'));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(CorrectiveAdmin)).width, 1280);
+    await _tapVisible(tester, find.text('Burst pipe'));
+    expect(find.text('Review and approve'), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Worker accounts'), findsOneWidget);
   });
 
   testWidgets('Intake displays triage and requires approval before dispatch', (

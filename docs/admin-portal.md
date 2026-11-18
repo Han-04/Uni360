@@ -29,6 +29,6 @@ From the project root, run:
 flutter run -d chrome --dart-define-from-file=config/supabase.json
 ```
 
-After editing the portal source, regenerate the embedded web assets with `npm.cmd ci --prefix admin_portal` and `npm.cmd run build:flutter --prefix admin_portal`, or use `flutter build web --dart-define-from-file=config/supabase.json`. The portal receives the Supabase project URL and publishable key from Flutter at runtime. Use the same Flutter run configuration after editing the dashboard. Corrective Maintenance uses the same desktop session as the administration portal.
+Use the same Flutter run configuration after editing the dashboard. To create a release build, run `flutter build web --dart-define-from-file=config/supabase.json`. Corrective Maintenance uses the same desktop session as the administration portal.
 
 The `manage-accounts` Edge Function is deployed in Uni360 Supabase. Its source is in `supabase/functions/manage-accounts/index.ts`. It checks each Auth token and the caller's current role and active status. Creation uses the server's Auth admin credential, inserts the linked account, and compensates for a failed insert by removing the newly created Auth user. New Worker records provision their workforce profile through the existing database trigger. The browser only uses the publishable key and the signed-in user's token.
