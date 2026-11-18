@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uni360/app/uni360_app.dart';
+import 'package:uni360/features/preventive/admin/admin_approvals.dart';
+import 'package:uni360/features/preventive/admin/admin_catalog.dart';
 import 'package:uni360/features/preventive/admin/admin_data.dart';
 import 'package:uni360/features/preventive/admin/admin_schedule_review.dart';
 import 'package:uni360/features/preventive/admin/admin_scheduling.dart';
@@ -18,6 +20,22 @@ class _TestAdministration extends AdminData {
   _TestAdministration() : super(_UnusedSupabaseClient());
 
   final saved = <AdminRow>[];
+  final createdFacilities = <AdminRow>[];
+
+  @override
+  Future<void> saveFacility(AdminRow values, {String? id}) async {
+    if (id != null) {
+      final index = createdFacilities.indexWhere((row) => row['id'] == id);
+      createdFacilities[index] = {...createdFacilities[index], ...values};
+      return;
+    }
+    createdFacilities.add({
+      ...values,
+      'id': 'new-${createdFacilities.length}',
+      'is_active': true,
+      'effective_active': true,
+    });
+  }
 
   @override
   Future<AdminRow> accounts(String action, AdminRow values) async {
@@ -71,6 +89,7 @@ class _TestAdministration extends AdminData {
       'effective_active': true,
       'zone_id': 'zone',
     },
+    ...createdFacilities,
   ];
 
   @override
@@ -82,6 +101,18 @@ class _TestAdministration extends AdminData {
 
   @override
   Future<List<String>> scheduledTaskNames() async => ['Toilet Cleaning'];
+
+  @override
+  Future<int> overdueCount() async => 1;
+
+  @override
+  Future<List<AdminRow>> overdueOrders(int page) async => [
+    for (final row in await scheduledTasksOn(
+      'Toilet Cleaning',
+      adminToday().subtract(const Duration(days: 1)),
+    ))
+      {...row, 'title': 'Toilet Cleaning'},
+  ];
 
   @override
   Future<List<AdminRow>> scheduledTasksOn(String title, DateTime date) async {
@@ -109,7 +140,7 @@ class _TestAdministration extends AdminData {
 Future<void> enterAdmin(
   WidgetTester tester,
   AccountRole role, {
-  _TestAdministration? data,
+  AdminData? data,
 }) async {
   tester.view.physicalSize = const Size(1440, 960);
   tester.view.devicePixelRatio = 1;
@@ -138,6 +169,17 @@ Future<void> enterAdmin(
 }
 
 void main() {
+  testWidgets('Administrator can open the overdue alert list', (tester) async {
+    await enterAdmin(tester, AccountRole.administrator);
+    expect(find.byType(Badge), findsOneWidget);
+    await tester.tap(find.text('Overdue tasks'));
+    await tester.pumpAndSettle();
+    expect(find.text('Toilet Cleaning'), findsOneWidget);
+    expect(find.text('Nur Hidayah · EMP-CLEAN-11'), findsOneWidget);
+    expect(find.text('Overdue'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('Account status filters the account list', (tester) async {
     final data = _TestAdministration()
       ..saved.addAll([
@@ -176,12 +218,17 @@ void main() {
       await tester.tap(find.text('Facilities').first);
       await tester.pumpAndSettle();
       expect(find.text('Zone'), findsNothing);
+      expect(find.text('Other locations'), findsNothing);
+      expect(find.text('View'), findsNothing);
       expect(find.text('Block D ›'), findsOneWidget);
       expect(find.text('Female Toilet'), findsNothing);
       await tester.tap(find.text('Block D ›'));
       await tester.pumpAndSettle();
       expect(find.text('Level 1 ›'), findsOneWidget);
-      expect(find.text('Female Toilet'), findsOneWidget);
+      expect(find.text('Female Toilet ›'), findsNothing);
+      await tester.tap(find.text('Level 1 ›'));
+      await tester.pumpAndSettle();
+      expect(find.text('Female Toilet ›'), findsOneWidget);
       await tester.tap(find.text('Sign out'));
       await tester.pumpAndSettle();
       expect(find.text('Administrator sign-in'), findsOneWidget);
@@ -191,6 +238,82 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('Admin creates and opens each level of the facility hierarchy', (
+    tester,
+  ) async {
+    final admin = _TestAdministration();
+    await enterAdmin(tester, AccountRole.superAdministrator, data: admin);
+    await tester.tap(find.text('Facilities').first);
+    await tester.pumpAndSettle();
+
+    final typeInput = find.byKey(const ValueKey('facility_type_label'));
+    for (final (label, name, type, customType, parentId) in [
+      ('Create facility', 'Test Arena', 'building', 'Sports complex', null),
+      ('Add level', 'Ground Floor', 'floor', 'Concourse', 'new-0'),
+      ('Add room', 'T001', 'room', 'Lecture room', 'new-1'),
+      ('Add property', 'Air-conditioning', 'asset', 'Split unit', 'new-2'),
+    ]) {
+      await tester.tap(find.widgetWithText(FilledButton, label));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('name')), name);
+      await tester.enterText(typeInput, customType);
+      await tester.tap(find.widgetWithText(FilledButton, label).last);
+      await tester.pumpAndSettle();
+      expect(admin.createdFacilities.last['facility_type'], type);
+      expect(admin.createdFacilities.last['parent_id'], parentId);
+      expect(
+        admin.createdFacilities.last['metadata']['facility_type_label'],
+        customType,
+      );
+      expect(find.text(customType), findsOneWidget);
+      expect(find.text('$name ›'), findsOneWidget);
+      await tester.tap(find.text('$name ›'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Room property'), findsOneWidget);
+    expect(find.text('Split unit'), findsOneWidget);
+    expect(find.text('Add property'), findsNothing);
+    expect(find.text('/ T001'), findsOneWidget);
+    expect(
+      ModalRoute.of(tester.element(find.text('Room property')))?.settings.name,
+      'new-3',
+    );
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextFormField>(typeInput).initialValue, 'Split unit');
+    await tester.enterText(typeInput, 'Inverter unit');
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inverter unit'), findsOneWidget);
+    await tester.tap(find.text('/ T001'));
+    await tester.pumpAndSettle();
+    expect(find.text('Air-conditioning ›'), findsOneWidget);
+    expect(find.text('Room property'), findsNothing);
+    expect(
+      ModalRoute.of(tester.element(find.text('Add property')))?.settings.name,
+      'new-2',
+    );
+  });
+
+  testWidgets('Scheduling and approvals start at the top of the dashboard', (
+    tester,
+  ) async {
+    await enterAdmin(tester, AccountRole.administrator);
+    await tester.tap(find.text('Facilities').first);
+    await tester.pumpAndSettle();
+    final top = tester.getTopLeft(find.text('Facilities').last).dy;
+    await tester.tap(find.text('Schedule Task'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.byType(AdminTaskTemplates)).dy,
+      closeTo(top, 1),
+    );
+    await tester.tap(find.text('Task approvals'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byType(AdminApprovals)).dy, closeTo(top, 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('Flutter Web admin login rejects worker accounts', (
     tester,
@@ -258,13 +381,14 @@ void main() {
     final picker = tester.widget<CalendarDatePicker>(
       find.byType(CalendarDatePicker),
     );
-    final day = DateTime(2026, 11, 16);
+    final today = adminToday();
+    final day = DateTime(today.year, today.month, today.day - 1);
     picker.onDateChanged(day);
     await tester.pumpAndSettle();
     expect(data.reviewDay, day);
     expect(find.text('Block D'), findsOneWidget);
     expect(find.text('11:00–12:30'), findsOneWidget);
-    expect(find.text('In progress'), findsOneWidget);
+    expect(find.text('Overdue'), findsOneWidget);
     final field = find.byType(TextField);
     await tester.ensureVisible(field);
     await tester.enterText(field, 'HIDAYAH');

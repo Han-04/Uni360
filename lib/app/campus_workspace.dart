@@ -142,17 +142,22 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
             tooltip: 'My profile',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => Scaffold(
-                  appBar: AppBar(
-                    leading: _worker ? const CurvedBackButton() : null,
-                    title: const Text('My profile'),
-                    backgroundColor: _worker ? WorkerColors.background : null,
-                  ),
-                  body: AccountProfileScreen(
-                    controller: widget.accounts,
-                    workforceDetails: widget.workforceDetails,
-                    loadWorkerProfile: widget.loadWorkerProfile,
-                    workerStatus: widget.workerStatus,
+                builder: (context) => Theme(
+                  data: _worker
+                      ? buildWorkerTheme(Theme.of(context))
+                      : Theme.of(context),
+                  child: Scaffold(
+                    appBar: AppBar(
+                      leading: _worker ? const CurvedBackButton() : null,
+                      title: const Text('My profile'),
+                      backgroundColor: _worker ? WorkerColors.background : null,
+                    ),
+                    body: AccountProfileScreen(
+                      controller: widget.accounts,
+                      workforceDetails: widget.workforceDetails,
+                      loadWorkerProfile: widget.loadWorkerProfile,
+                      workerStatus: widget.workerStatus,
+                    ),
                   ),
                 ),
               ),

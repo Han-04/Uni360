@@ -1,13 +1,13 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-
-import '../../../../core/widgets/curved_back_button.dart';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/common.dart';
+import '../../../../core/widgets/curved_back_button.dart';
 import '../../data/assigned_work_repository.dart';
 import '../../data/campus_position.dart';
 import 'work_evidence_camera.dart';
@@ -46,10 +46,21 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
   bool get _editing =>
       !_busy &&
       widget.actions != null &&
-      _order.status == AssignedWorkStatus.inProgress;
+      _order.displayStatus == AssignedWorkStatus.inProgress;
+  Timer? _dayRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    _dayRefresh = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => setState(() {}),
+    );
+  }
 
   @override
   void dispose() {
+    _dayRefresh?.cancel();
     _notes.dispose();
     super.dispose();
   }
@@ -107,7 +118,10 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
 
   Future<void> _takePhoto() => _change((actions) async {
     final photo = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute(builder: (_) => const WorkEvidenceCamera()),
+      MaterialPageRoute(
+        builder: (_) =>
+            InheritedTheme.captureAll(context, const WorkEvidenceCamera()),
+      ),
     );
     if (photo == null || !mounted) return;
     await actions.attachPhoto(
@@ -182,7 +196,7 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
 
   @override
   Widget build(BuildContext context) {
-    final inProgress = _order.status == AssignedWorkStatus.inProgress;
+    final inProgress = _order.displayStatus == AssignedWorkStatus.inProgress;
     final verified = _order.locationVerifiedAt != null && !_verifyAgain;
     final phoneApp = supportsCampusCapture;
     final canVerify = _editing && phoneApp;
@@ -208,8 +222,15 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            SectionHeading(_order.title),
-            Text(_order.status.label),
+            _WorkOrderSummary(order: _order),
+            if (_order.displayStatus == AssignedWorkStatus.overdue)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: InfoBanner(
+                  'The scheduled day has passed. Contact your administrator about this overdue task.',
+                  warning: true,
+                ),
+              ),
             if (_busy) const LinearProgressIndicator(),
             if (_error != null)
               Padding(
@@ -219,15 +240,10 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
-            const SizedBox(height: 10),
-            Text('${dateLabel(_order.starts)} · ${assignedWorkTime(_order)}'),
-            for (final location in _order.locations) Text(location),
             if (_order.feedback.isNotEmpty) ...[
               const SectionHeading('Review feedback'),
               Text(_order.feedback),
             ],
-            const SectionHeading('Instructions'),
-            Text(_order.instructions),
             if (inProgress || _order.locationVerifiedAt != null) ...[
               const SectionHeading('Location verification'),
               if (verified)
@@ -248,28 +264,31 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
                 ),
             ],
             if (_order.checklist.isNotEmpty) ...[
-              const SectionHeading('Checklist'),
-              for (final (index, item) in _order.checklist.indexed)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(item),
-                  value: _order.checkedItems.contains(index),
-                  onChanged: _editing
-                      ? (checked) => _change(
-                          (actions) =>
-                              actions.checkItem(_order.id, index, checked!),
-                        )
-                      : null,
-                ),
+              const SizedBox(height: 14),
+              _WorkOrderChecklist(
+                order: _order,
+                onChanged: _editing
+                    ? (index, checked) => _change(
+                        (actions) =>
+                            actions.checkItem(_order.id, index, checked),
+                      )
+                    : null,
+              ),
             ],
             if (widget.actions != null &&
-                _order.status == AssignedWorkStatus.assigned) ...[
+                _order.displayStatus == AssignedWorkStatus.assigned) ...[
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: _busy
                     ? null
-                    : () => _change((actions) => actions.start(_order.id)),
+                    : () {
+                        if (_order.displayStatus ==
+                            AssignedWorkStatus.assigned) {
+                          _change((actions) => actions.start(_order.id));
+                        } else {
+                          setState(() {});
+                        }
+                      },
                 child: const Text('Start task'),
               ),
             ],
@@ -321,6 +340,165 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _WorkOrderSummary extends StatelessWidget {
+  const _WorkOrderSummary({required this.order});
+
+  final AssignedWork order;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return SurfaceCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            order.title,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: ShapeDecoration(
+              color: order.displayStatus == AssignedWorkStatus.overdue
+                  ? const Color(0xFFFFE4E4)
+                  : WorkerColors.tint,
+              shape: const StadiumBorder(),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              child: Text(
+                order.displayStatus.label,
+                style: text.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: order.displayStatus == AssignedWorkStatus.overdue
+                      ? const Color(0xFF9C2525)
+                      : WorkerColors.deepBlue,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _metadata(
+            Icons.calendar_today_outlined,
+            '${dateLabel(order.starts)} · ${assignedWorkTime(order)}',
+          ),
+          for (final location in order.locations) ...[
+            const SizedBox(height: 7),
+            _metadata(Icons.place_outlined, location),
+          ],
+          if (order.instructions.trim().isNotEmpty) ...[
+            const Divider(height: 24),
+            Text(
+              'Instructions',
+              style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              order.instructions,
+              style: text.bodyMedium?.copyWith(height: 1.45),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _metadata(IconData icon, String label) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 17, color: WorkerColors.blue),
+      const SizedBox(width: 8),
+      Expanded(child: Text(label)),
+    ],
+  );
+}
+
+class _WorkOrderChecklist extends StatelessWidget {
+  const _WorkOrderChecklist({required this.order, required this.onChanged});
+
+  final AssignedWork order;
+  final void Function(int index, bool checked)? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = order.checklist.length;
+    final completed = order.checkedItems
+        .where((index) => index >= 0 && index < total)
+        .length;
+    final progress = '$completed/$total completed';
+    return SurfaceCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Checklist',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 12,
+            children: [
+              const Text('Progress', style: TextStyle(color: AppColors.muted)),
+              Text(
+                progress,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          LinearProgressIndicator(
+            value: completed / total,
+            semanticsLabel: 'Checklist progress',
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(8),
+            backgroundColor: WorkerColors.tint,
+            color: WorkerColors.blue,
+          ),
+          const SizedBox(height: 14),
+          for (final (index, item) in order.checklist.indexed) ...[
+            if (index > 0) const SizedBox(height: 7),
+            _item(context, index, item),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _item(BuildContext context, int index, String item) {
+    final checked = order.checkedItems.contains(index);
+    return Material(
+      color: checked ? WorkerColors.background : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFDDE3EC)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: CheckboxListTile(
+        contentPadding: const EdgeInsets.only(left: 2, right: 10),
+        controlAffinity: ListTileControlAffinity.leading,
+        dense: true,
+        title: Text(
+          item,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: checked ? AppColors.muted : AppColors.navy,
+            decoration: checked ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        value: checked,
+        onChanged: onChanged == null
+            ? null
+            : (value) => onChanged!(index, value == true),
       ),
     );
   }

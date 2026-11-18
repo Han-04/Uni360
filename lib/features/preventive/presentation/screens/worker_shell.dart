@@ -27,92 +27,97 @@ class _WorkerShellState extends State<WorkerShell> {
   int _index = 0;
   void _open(WorkOrder order) => Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) =>
-          WorkOrderScreen(controller: widget.controller, order: order),
+      builder: (context) => Theme(
+        data: buildPreventiveTheme(Theme.of(context)),
+        child: WorkOrderScreen(controller: widget.controller, order: order),
+      ),
     ),
   );
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.controller,
-    builder: (context, _) => Scaffold(
-      appBar: AppBar(
-        leading: CurvedBackButton.forRoute(context),
-        title: Text(
-          ['Uni360', 'My work orders', 'Notifications', 'My profile'][_index],
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 20),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.teal.withValues(alpha: .1),
-              borderRadius: BorderRadius.circular(8),
+  Widget build(BuildContext context) => Theme(
+    data: buildPreventiveTheme(Theme.of(context)),
+    child: ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => Scaffold(
+        appBar: AppBar(
+          leading: CurvedBackButton.forRoute(context),
+          title: Text(
+            ['Uni360', 'My work orders', 'Notifications', 'My profile'][_index],
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          actions: [
+            Container(
+              margin: const EdgeInsets.only(right: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.teal.withValues(alpha: .1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'DEMO',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: AppColors.teal,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.3,
+                ),
+              ),
             ),
-            child: const Text(
-              'DEMO',
-              style: TextStyle(
-                fontSize: 10,
-                color: AppColors.teal,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
+          ],
+        ),
+        body: SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: IndexedStack(
+                index: _index,
+                children: [
+                  _Dashboard(
+                    controller: widget.controller,
+                    open: _open,
+                    viewAll: () => setState(() => _index = 1),
+                  ),
+                  _TaskList(controller: widget.controller, open: _open),
+                  _Notifications(controller: widget.controller, open: _open),
+                  AccountProfileScreen(
+                    controller: widget.controller.accounts,
+                    workforceDetails: widget.workforceDetails,
+                  ),
+                ],
               ),
             ),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: IndexedStack(
-              index: _index,
-              children: [
-                _Dashboard(
-                  controller: widget.controller,
-                  open: _open,
-                  viewAll: () => setState(() => _index = 1),
-                ),
-                _TaskList(controller: widget.controller, open: _open),
-                _Notifications(controller: widget.controller, open: _open),
-                AccountProfileScreen(
-                  controller: widget.controller.accounts,
-                  workforceDetails: widget.workforceDetails,
-                ),
-              ],
-            ),
-          ),
         ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.assignment_outlined),
-            selectedIcon: Icon(Icons.assignment),
-            label: 'My tasks',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: widget.controller.unreadCount > 0,
-              label: Text('${widget.controller.unreadCount}'),
-              child: const Icon(Icons.notifications_outlined),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (i) => setState(() => _index = i),
+          destinations: [
+            const NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home',
             ),
-            label: 'Alerts',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+            const NavigationDestination(
+              icon: Icon(Icons.assignment_outlined),
+              selectedIcon: Icon(Icons.assignment),
+              label: 'My tasks',
+            ),
+            NavigationDestination(
+              icon: Badge(
+                isLabelVisible: widget.controller.unreadCount > 0,
+                label: Text('${widget.controller.unreadCount}'),
+                child: const Icon(Icons.notifications_outlined),
+              ),
+              label: 'Alerts',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -287,6 +292,7 @@ class _Dashboard extends StatelessWidget {
           const EmptyState(
             title: 'You’re all caught up',
             message: 'New assigned tasks will appear here.',
+            illustration: _emptyTasksIllustration,
           )
         else
           ...upcoming
@@ -385,6 +391,7 @@ class _TaskListState extends State<_TaskList> {
           const EmptyState(
             title: 'No work orders found',
             message: 'Try another search or adjust your filters.',
+            illustration: _emptyTasksIllustration,
           )
         else
           ...filtered.map(
@@ -394,6 +401,14 @@ class _TaskListState extends State<_TaskList> {
     );
   }
 }
+
+const _emptyTasksIllustration = Image(
+  image: AssetImage('assets/tasks/empty-tasks.png'),
+  width: 126,
+  height: 112,
+  fit: BoxFit.contain,
+  excludeFromSemantics: true,
+);
 
 class _Notifications extends StatelessWidget {
   const _Notifications({required this.controller, required this.open});

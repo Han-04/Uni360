@@ -313,9 +313,12 @@ class _WorkOrderScreenState extends State<WorkOrderScreen> {
                     onPressed: () => Navigator.push<void>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => VerificationScreen(
-                          controller: widget.controller,
-                          order: o,
+                        builder: (_) => InheritedTheme.captureAll(
+                          context,
+                          VerificationScreen(
+                            controller: widget.controller,
+                            order: o,
+                          ),
                         ),
                       ),
                     ),
@@ -464,9 +467,12 @@ class _WorkOrderScreenState extends State<WorkOrderScreen> {
                     onPressed: () => Navigator.push<void>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => EvidenceScreen(
-                          controller: widget.controller,
-                          order: o,
+                        builder: (_) => InheritedTheme.captureAll(
+                          context,
+                          EvidenceScreen(
+                            controller: widget.controller,
+                            order: o,
+                          ),
                         ),
                       ),
                     ),

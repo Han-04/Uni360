@@ -12,8 +12,24 @@ const _types = {
   'floor': 'Floor',
   'room': 'Room',
   'outdoor_area': 'Outdoor area',
-  'asset': 'Asset',
+  'asset': 'Property',
   'other': 'Other',
+};
+
+const _facilityTypeLabelKey = 'facility_type_label';
+
+String? _facilityTypeLabel(AdminRow row) {
+  final label = (row['metadata'] as Map?)?[_facilityTypeLabelKey];
+  return label is String && label.trim().isNotEmpty
+      ? label
+      : _types[row['facility_type']];
+}
+
+const _childTypes = {'building': 'floor', 'floor': 'room', 'room': 'asset'};
+const _addLabels = {
+  'floor': 'Add level',
+  'room': 'Add room',
+  'asset': 'Add property',
 };
 
 const _checklists = {
@@ -88,72 +104,85 @@ String pathFor(AdminRow start, Map<dynamic, AdminRow> byId) {
 }
 
 class AdminFacilities extends StatefulWidget {
-  const AdminFacilities({super.key, required this.data});
+  const AdminFacilities({super.key, required this.data, required this.padding});
   final AdminData data;
+  final EdgeInsets padding;
 
   @override
   State<AdminFacilities> createState() => _AdminFacilitiesState();
 }
 
 class _AdminFacilitiesState extends State<AdminFacilities> {
+  final navigator = GlobalKey<NavigatorState>();
+  late final listing = ValueNotifier(widget.data.facilities());
+
+  @override
+  void dispose() {
+    listing.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => NavigatorPopHandler<void>(
+    onPopWithResult: (_) => navigator.currentState?.pop(),
+    child: Navigator(key: navigator, onGenerateRoute: (_) => facilityRoute([])),
+  );
+
+  Route<void> facilityRoute(List<String> trail) => MaterialPageRoute<void>(
+    settings: RouteSettings(name: trail.isEmpty ? '/' : trail.last),
+    builder: (_) => SingleChildScrollView(
+      padding: widget.padding,
+      child: _FacilityPage(
+        data: widget.data,
+        listing: listing,
+        trail: trail,
+        open: (id) =>
+            navigator.currentState!.push<void>(facilityRoute([...trail, id])),
+      ),
+    ),
+  );
+}
+
+class _FacilityPage extends StatefulWidget {
+  const _FacilityPage({
+    required this.data,
+    required this.listing,
+    required this.trail,
+    required this.open,
+  });
+
+  final AdminData data;
+  final ValueNotifier<Future<List<AdminRow>>> listing;
+  final List<String> trail;
+  final ValueChanged<String> open;
+
+  @override
+  State<_FacilityPage> createState() => _FacilityPageState();
+}
+
+class _FacilityPageState extends State<_FacilityPage> {
   AdminData get data => widget.data;
-  late var listing = data.facilities();
-  List<String> trail = [];
-  bool other = false;
+  List<String> get trail => widget.trail;
   int page = 0;
   String search = '';
   AdminRow? schedule;
 
-  void reload() {
-    final next = data.facilities();
-    setState(() {
-      listing = next;
-    });
-  }
+  void reload() => widget.listing.value = data.facilities();
 
-  void open(List<String> path) => setState(() {
-    trail = path;
-    page = 0;
-    search = '';
-  });
+  void backTo(String route) =>
+      Navigator.of(context).popUntil(ModalRoute.withName(route));
 
-  List<(AdminRow, int)> matches(List<AdminRow> rows, String? active) {
-    final children = <Object?, List<AdminRow>>{};
-    for (final row in rows) {
-      children.putIfAbsent(row['parent_id'], () => []).add(row);
-    }
+  List<AdminRow> matches(List<AdminRow> rows, String? active) {
     final needle = search.toLowerCase();
-    final seen = <Object?>{active};
-    List<(AdminRow, int)> branch(Object? parent, int depth) => [
-      for (final row in children[parent] ?? const <AdminRow>[])
-        if (seen.add(row['id'])) ...[
-          (row, depth),
-          ...branch(row['id'], depth + 1),
-        ],
+    return [
+      for (final row in rows)
+        if (row['parent_id'] == active &&
+            (active != null || row['facility_type'] == 'building') &&
+            (row['metadata'] as Map?)?['arena_replaced'] != true &&
+            (row['metadata'] as Map?)?['catalog_removed'] != true &&
+            (row['name'] as String).toLowerCase().contains(needle))
+          row,
     ];
-    bool nameMatches(AdminRow row) =>
-        (row['name'] as String).toLowerCase().contains(needle);
-    if (active == null) {
-      return [
-        for (final row in children[null] ?? const <AdminRow>[])
-          if ((row['facility_type'] == 'building') != other && nameMatches(row))
-            (row, 0),
-      ];
-    }
-    final entries = branch(active, 0);
-    if (needle.isEmpty) return entries;
-    final visibleIds = <Object?>{};
-    final byId = {for (final row in rows) row['id']: row};
-    for (final (row, _) in entries.where((item) => nameMatches(item.$1))) {
-      for (
-        AdminRow? node = row;
-        node != null && node['id'] != active && visibleIds.add(node['id']);
-        node = byId[node['parent_id']]
-      ) {}
-    }
-    return entries
-        .where((entry) => visibleIds.contains(entry.$1['id']))
-        .toList();
   }
 
   Future<void> edit(
@@ -162,6 +191,13 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
     AdminRow? parent,
   }) async {
     final metadata = row?['metadata'] as Map? ?? const {};
+    final additionalDetails = Map.of(metadata)..remove(_facilityTypeLabelKey);
+    final createType = parent == null
+        ? 'building'
+        : _childTypes[parent['facility_type']];
+    final addLabel = parent == null
+        ? 'Create facility'
+        : _addLabels[createType] ?? 'Add sub-location';
     final parents = {
       for (final item in facilities)
         if (item['id'] != row?['id'] &&
@@ -171,49 +207,55 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
     };
     final saved = await adminForm(
       context,
-      row != null
-          ? 'Edit facility'
-          : parent != null
-          ? 'Add sub-location'
-          : 'Create facility',
+      row != null ? 'Edit facility' : addLabel,
       {
         'name': row?['name'],
-        'facility_type':
-            row?['facility_type'] ??
-            (parent != null
-                ? 'room'
-                : other
-                ? 'outdoor_area'
-                : 'building'),
+        'facility_type': row?['facility_type'] ?? createType ?? 'room',
+        _facilityTypeLabelKey: metadata[_facilityTypeLabelKey],
         'parent_id': row?['parent_id'] ?? '',
-        'metadata': metadata.isEmpty
+        'metadata': additionalDetails.isEmpty
             ? ''
-            : const JsonEncoder.withIndent('  ').convert(metadata),
+            : const JsonEncoder.withIndent('  ').convert(additionalDetails),
         'toilet': row != null && isToilet(row),
       },
       (values, refresh) => [
         if (parent != null && row == null) Text('Inside ${parent['name']}'),
-        adminText(values, 'name', 'Name', required: true, max: 120),
-        adminSelect(
+        adminText(
           values,
-          'facility_type',
-          'Type',
-          _types,
-          refresh,
+          'name',
+          switch (createType) {
+            'floor' when row == null => 'Level name',
+            'room' when row == null => 'Room name',
+            'asset' when row == null => 'Property name',
+            _ => 'Facility name',
+          },
           required: true,
+          max: 120,
         ),
+        adminText(values, _facilityTypeLabelKey, 'Type', max: 120),
+        if (row != null || createType == null)
+          adminSelect(
+            values,
+            'facility_type',
+            'Hierarchy type',
+            _types,
+            refresh,
+            required: true,
+          ),
         if (row != null)
           adminSelect(values, 'parent_id', 'Parent facility', {
             '': 'No parent',
             ...parents,
           }, refresh),
-        adminCheck(values, 'toilet', 'Toilet room', refresh),
-        ExpansionTile(
-          title: const Text('Additional facility details'),
-          children: [
-            adminText(values, 'metadata', 'Metadata (JSON object)', lines: 4),
-          ],
-        ),
+        if (values['facility_type'] == 'room')
+          adminCheck(values, 'toilet', 'Toilet room', refresh),
+        if (row != null || createType == null)
+          ExpansionTile(
+            title: const Text('Additional facility details'),
+            children: [
+              adminText(values, 'metadata', 'Metadata (JSON object)', lines: 4),
+            ],
+          ),
       ],
       (values) async {
         final raw = optionalField(values, 'metadata');
@@ -224,15 +266,16 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
           );
         }
         final type = values['facility_type'];
-        if (values['toilet'] == true) {
-          if (type != 'room') {
-            throw const FormatException(
-              'Choose Room as the facility type for a toilet.',
-            );
-          }
+        if (type == 'room' && values['toilet'] == true) {
           decoded['room_type'] = 'toilet';
         } else if (decoded['room_type'] == 'toilet') {
           decoded.remove('room_type');
+        }
+        final customType = optionalField(values, _facilityTypeLabelKey);
+        if (customType == null) {
+          decoded.remove(_facilityTypeLabelKey);
+        } else {
+          decoded[_facilityTypeLabelKey] = customType;
         }
         final payload = {
           'name': fieldText(values, 'name'),
@@ -242,15 +285,9 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
               ? optionalField(values, 'parent_id')
               : parent?['id'],
         };
-        final table = data.table('preventive_facility');
-        await data.write(
-          row != null
-              ? table.update(payload).eq('id', row['id'])
-              : table.insert(payload),
-        );
-        if (row == null && parent == null) other = type != 'building';
+        await data.saveFacility(payload, id: row?['id'] as String?);
       },
-      action: row == null ? 'Create facility' : 'Save changes',
+      action: row == null ? addLabel : 'Save changes',
     );
     if (saved && mounted) {
       if (row == null) {
@@ -285,134 +322,118 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
   Widget body(List<AdminRow> rows) {
     final byId = {for (final row in rows) row['id']: row};
     final parent = trail.isEmpty ? null : byId[trail.last];
+    if (trail.isNotEmpty && parent == null) {
+      return TextButton(
+        onPressed: () => backTo('/'),
+        child: const Text('Back to Facilities'),
+      );
+    }
+    final currentType = parent?['facility_type'];
+    final childLabel =
+        _addLabels[_childTypes[currentType]] ?? 'Add sub-location';
     final entries = matches(rows, parent?['id'] as String?);
-    final start = parent == null ? page * 25 : 0;
-    final visible = parent == null ? entries.skip(start).take(25) : entries;
+    final start = page * 25;
+    final visible = entries.skip(start).take(25);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (parent != null)
           Wrap(
             children: [
-              adminAction(
-                other ? 'Other locations' : 'Facilities',
-                () => open([]),
-              ),
-              for (final (index, id) in trail.indexed)
+              adminAction('Facilities', () => backTo('/')),
+              for (final id in trail.take(trail.length - 1))
                 if (byId[id] case final node?)
-                  adminAction(
-                    '/ ${node['name']}',
-                    () => open(trail.take(index + 1).toList()),
-                  ),
+                  adminAction('/ ${node['name']}', () => backTo(id)),
             ],
           ),
         AdminHeading(
-          (parent?['name'] as String?) ??
-              (other ? 'Other locations' : 'Facilities'),
-          subtitle: parent == null
-              ? 'Open a building to see its floors and rooms.'
-              : 'Floors, rooms and other spaces in this location.',
+          (parent?['name'] as String?) ?? 'Facilities',
+          subtitle: switch (currentType) {
+            'building' => 'Open a level to see its rooms.',
+            'floor' => 'Open a room to see its properties.',
+            'room' => 'Equipment and other properties in this room.',
+            'asset' => 'Room property',
+            _ => 'Open a building to see its levels.',
+          },
           actions: [
-            if (parent == null)
-              OutlinedButton(
-                onPressed: () {
-                  other = !other;
-                  open([]);
-                },
-                child: Text(other ? 'Buildings' : 'Other locations'),
-              )
-            else
+            if (parent != null)
               OutlinedButton(
                 onPressed: () => setState(() => schedule = parent),
                 child: const Text('Schedules for this location'),
               ),
-            FilledButton(
-              onPressed: () => edit(rows, parent: parent),
-              child: Text(
-                parent == null ? 'Create facility' : 'Add sub-location',
+            if (currentType != 'asset')
+              FilledButton(
+                onPressed: () => edit(rows, parent: parent),
+                child: Text(parent == null ? 'Create facility' : childLabel),
               ),
-            ),
           ],
         ),
-        AdminSearch(
-          'Search by name',
-          (value) => setState(() {
-            search = value;
-            page = 0;
-          }),
-          key: ValueKey((trail, search)),
-          initial: search,
-        ),
-        AdminTable(
-          ['Facility', 'Type', 'Status', 'Actions'],
-          [
-            for (final (row, depth) in visible)
+        if (currentType == 'asset')
+          AdminTable(
+            ['Type', 'Status', 'Actions'],
+            [
               [
-                Padding(
-                  padding: EdgeInsets.only(left: depth.clamp(0, 6) * 14.0),
-                  child:
-                      ['building', 'floor'].contains(row['facility_type']) ||
-                          rows.any((entry) => entry['parent_id'] == row['id'])
-                      ? adminAction(
-                          '${row['name']} ›',
-                          () => open(pathIds(row, byId)),
-                        )
-                      : adminCell(row['name']),
-                ),
-                adminCell(_types[row['facility_type']]),
-                adminCell(
-                  row['is_active'] != true
-                      ? 'Inactive'
-                      : row['effective_active'] == true
-                      ? 'Active'
-                      : 'Parent inactive',
-                ),
+                adminCell(_facilityTypeLabel(parent!)),
+                adminCell(statusOf(parent)),
                 adminActions([
-                  adminAction(
-                    'View',
-                    () => adminDetails(context, row['name'] as String, [
-                      Text(_types[row['facility_type']] ?? 'Facility'),
-                      Text(
-                        'Parent facility · ${byId[row['parent_id']]?['name'] ?? "None"}',
-                      ),
-                      const SizedBox(height: 12),
-                      SelectableText(
-                        const JsonEncoder.withIndent('  ')
-                            .convert(row['metadata']),
-                      ),
-                    ]),
-                  ),
-                  adminAction('Edit', () => edit(rows, row: row)),
-                  adminAction(
-                    'Schedules',
-                    () => setState(() => schedule = row),
-                  ),
-                  if (row['is_active'] == true)
-                    adminAction('Deactivate', () => _deactivateRecord(row)),
+                  adminAction('Edit', () => edit(rows, row: parent)),
+                  if (parent['is_active'] == true)
+                    adminAction('Deactivate', () => _deactivateRecord(parent)),
                 ]),
               ],
-          ],
-          empty: 'No matching facilities.',
-        ),
-        if (parent == null)
-          AdminPager(
-            page: page,
-            next: entries.length > start + 25,
-            change: (number) => setState(() => page = number),
+            ],
+            empty: 'No property details.',
+          )
+        else ...[
+          AdminSearch(
+            'Search by name',
+            (value) => setState(() {
+              search = value;
+              page = 0;
+            }),
+            key: ValueKey((trail, search)),
+            initial: search,
           ),
+          AdminTable(
+            ['Facility', 'Type', 'Status', 'Actions'],
+            [
+              for (final row in visible)
+                [
+                  adminAction(
+                    '${row['name']} ›',
+                    () => widget.open(row['id'] as String),
+                  ),
+                  adminCell(_facilityTypeLabel(row)),
+                  adminCell(statusOf(row)),
+                  adminActions([
+                    adminAction('Edit', () => edit(rows, row: row)),
+                    adminAction(
+                      'Schedules',
+                      () => setState(() => schedule = row),
+                    ),
+                    if (row['is_active'] == true)
+                      adminAction('Deactivate', () => _deactivateRecord(row)),
+                  ]),
+                ],
+            ],
+            empty: 'No matching facilities.',
+          ),
+          if (page > 0 || entries.length > 25)
+            AdminPager(
+              page: page,
+              next: entries.length > start + 25,
+              change: (number) => setState(() => page = number),
+            ),
+        ],
       ],
     );
   }
 
-  List<String> pathIds(AdminRow start, Map<dynamic, AdminRow> byId) {
-    final path = <String>{};
-    for (
-      AdminRow? row = start;
-      row != null && path.add(row['id'] as String);
-      row = byId[row['parent_id']]
-    ) {}
-    return path.toList().reversed.toList();
-  }
+  String statusOf(AdminRow row) => row['is_active'] != true
+      ? 'Inactive'
+      : row['effective_active'] == true
+      ? 'Active'
+      : 'Parent inactive';
 
   @override
   Widget build(BuildContext context) {
@@ -423,7 +444,10 @@ class _AdminFacilitiesState extends State<AdminFacilities> {
         back: () => setState(() => schedule = null),
       );
     }
-    return AdminLoad(listing, body, retry: reload);
+    return ValueListenableBuilder(
+      valueListenable: widget.listing,
+      builder: (context, future, _) => AdminLoad(future, body, retry: reload),
+    );
   }
 }
 

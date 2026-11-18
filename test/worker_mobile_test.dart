@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:uni360/app/uni360_app.dart';
 import 'package:uni360/core/theme/app_theme.dart';
+import 'package:uni360/core/utils/formatters.dart';
 import 'package:uni360/features/preventive/application/preventive_controller.dart';
 import 'package:uni360/features/preventive/data/assigned_work_repository.dart';
 import 'package:uni360/features/preventive/data/campus_position.dart';
@@ -14,6 +15,7 @@ import 'package:uni360/features/preventive/presentation/screens/worker_shell.dar
 import 'package:uni360/features/workforce/worker_profile_repository.dart';
 import 'package:uni360/shared/account/account.dart';
 import 'package:uni360/shared/account/account_controller.dart';
+import 'package:url_launcher/link.dart';
 
 import 'support/test_accounts.dart';
 
@@ -40,7 +42,10 @@ AssignedWork cleaningOn(DateTime date) => AssignedWork(
 );
 
 class TestWorkActions implements AssignedWorkActions {
-  final initial = cleaningOn(DateTime(2026, 11, 16));
+  TestWorkActions([DateTime? day])
+    : initial = cleaningOn(day ?? malaysiaToday());
+
+  final AssignedWork initial;
   AssignedWorkStatus status = AssignedWorkStatus.assigned;
   final checkedItems = <int>{};
   final photoPaths = <String>[];
@@ -133,12 +138,20 @@ void main() {
     final submit = find.widgetWithText(FilledButton, 'Submit for approval');
     final camera = find.widgetWithText(OutlinedButton, 'Take photo');
     expect(tester.widget<CheckboxListTile>(checklist).onChanged, isNull);
+    expect(find.text('0/1 completed'), findsOneWidget);
+    await reveal(tester, find.text('Start task'));
     await tester.tap(find.text('Start task'));
     await tester.pumpAndSettle();
     expect(find.text('In progress'), findsOneWidget);
+    await reveal(tester, checklist);
     await tester.tap(checklist);
     await tester.pumpAndSettle();
     expect(actions.checkedItems, {0});
+    expect(find.text('1/1 completed'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('Clean fixtures')).style?.decoration,
+      TextDecoration.lineThrough,
+    );
     await reveal(tester, submit);
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
@@ -229,9 +242,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(dates.last, tomorrow);
     expect(find.text('Approved toilet cleaning'), findsOneWidget);
-    await tester.tap(find.byTooltip('Previous day'));
+    await tester.tap(find.text('Today'));
     await tester.pumpAndSettle();
     expect(find.text('No assigned tasks'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, dateLabel(today)));
+    await tester.pumpAndSettle();
+    expect(find.text('Task calendar'), findsOneWidget);
+    final tomorrowLabel = MaterialLocalizations.of(
+      tester.element(find.text('Task calendar')),
+    ).formatFullDate(tomorrow);
+    await tester.tap(find.byTooltip('$tomorrowLabel · Has tasks'));
+    await tester.pumpAndSettle();
+    expect(dates.last, tomorrow);
     await tester.tap(find.byTooltip('Show all dates'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Approved toilet cleaning'));
@@ -239,6 +261,45 @@ void main() {
     expect(find.byIcon(Icons.reply_rounded), findsOneWidget);
     expect(find.text('Clean the assigned washroom.'), findsOneWidget);
     expect(find.text('Clean fixtures'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('An unfinished work order from yesterday is read-only', (
+    tester,
+  ) async {
+    final today = malaysiaToday();
+    final actions = TestWorkActions(
+      DateTime(today.year, today.month, today.day - 1),
+    );
+    for (final status in [
+      AssignedWorkStatus.assigned,
+      AssignedWorkStatus.inProgress,
+    ]) {
+      actions.status = status;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AssignedWorkDetails(
+            key: ValueKey(status),
+            initial: await actions.loadOrder(
+              'assigned-worker',
+              actions.initial.id,
+            ),
+            workerId: 'assigned-worker',
+            actions: actions,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Overdue'), findsOneWidget);
+      expect(find.text('Start task'), findsNothing);
+      expect(find.text('Submit for approval'), findsNothing);
+      expect(
+        tester
+            .widget<CheckboxListTile>(find.byType(CheckboxListTile))
+            .onChanged,
+        isNull,
+      );
+    }
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -300,6 +361,8 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      var certificateLoads = 0;
+      const documentUrl = 'https://example.com/test-certificate.pdf';
       await tester.pumpWidget(
         Uni360App(
           accounts: TestAccounts(),
@@ -313,9 +376,19 @@ void main() {
             ],
             certifications: [
               if (width == 600)
-                const WorkerCertification(
+                WorkerCertification(
                   name: 'Workplace safety',
                   number: 'WS-01',
+                  expiryDate: null,
+                  loadDocumentUrl: () async {
+                    certificateLoads++;
+                    return documentUrl;
+                  },
+                ),
+              if (width == 600)
+                const WorkerCertification(
+                  name: 'First aid',
+                  number: 'FA-02',
                   expiryDate: null,
                 ),
             ],
@@ -359,6 +432,21 @@ void main() {
         find.text(width == 600 ? 'Workplace safety' : 'No certifications yet'),
         findsOneWidget,
       );
+      if (width == 600) {
+        expect(find.text('Certificate ID · WS-01'), findsOneWidget);
+        expect(find.text('Certificate ID · FA-02'), findsOneWidget);
+        final documentIcon = find.byTooltip('View certificate document');
+        expect(documentIcon, findsOneWidget);
+        expect(certificateLoads, 0);
+        await tester.tap(documentIcon);
+        await tester.pumpAndSettle();
+        expect(certificateLoads, 1);
+        expect(find.text('Open certificate document'), findsOneWidget);
+        expect(
+          tester.widget<Link>(find.byType(Link)).uri,
+          Uri.parse(documentUrl),
+        );
+      }
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

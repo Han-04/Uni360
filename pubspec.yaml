@@ -30,5 +30,15 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/workforce/no-certifications.png
+    - assets/workforce/empty-credentials.png
+    - assets/tasks/empty-tasks.png
     - assets/notifications/empty-mailbox.png
+    - assets/fonts/selawik/LICENSE.txt
+  fonts:
+    - family: Selawik
+      fonts:
+        - asset: assets/fonts/selawik/selawk.ttf
+        - asset: assets/fonts/selawik/selawksb.ttf
+          weight: 600
+        - asset: assets/fonts/selawik/selawkb.ttf
+          weight: 700

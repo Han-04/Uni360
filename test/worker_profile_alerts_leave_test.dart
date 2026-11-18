@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uni360/app/uni360_app.dart';
+import 'package:uni360/features/preventive/data/assigned_work_repository.dart';
 import 'package:uni360/features/preventive/data/preventive_alert_repository.dart';
 import 'package:uni360/features/workforce/worker_leave_repository.dart';
 
@@ -51,7 +52,22 @@ class _Leave extends WorkerLeaveRepository {
     String? workerId,
     String? status,
     int page = 0,
-  }) async => [];
+  }) async => [
+    if (submitted case (final kind, final reason))
+      WorkerLeave.fromRow({
+        'id': 'leave-1',
+        'worker_id': workerId,
+        'leave_type': kind,
+        'starts_on': '2026-11-18',
+        'ends_on': '2026-11-19',
+        'reason': reason,
+        'status': 'pending',
+        'requested_at': '2026-11-18T03:00:00Z',
+        'reassigned_count': 0,
+        'uncovered_count': 0,
+        'active_count': 0,
+      }),
+  ];
 
   (String, String)? submitted;
 
@@ -63,7 +79,7 @@ class _Leave extends WorkerLeaveRepository {
     String reason, {
     LeaveDocument? document,
   }) async {
-    expect(first, last);
+    expect(last, DateTime(first.year, first.month, first.day + 1));
     submitted = (kind, reason);
   }
 }
@@ -115,9 +131,38 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Task approved'), findsOneWidget);
       expect(find.text('Test Administrator'), findsOneWidget);
+      final message = find.text('Toilet Cleaning was approved.');
+      final date = find.text('17 Nov 2026');
+      final notificationText = [
+        find.text('Test Administrator'),
+        find.text('Task approved'),
+        message,
+      ];
+      for (final text in notificationText) {
+        final style = tester.widget<Text>(text).style!;
+        expect(style.fontWeight, FontWeight.w700);
+        expect(style.fontSize, isNull);
+      }
+      expect(tester.widget<Text>(date).style?.fontWeight, FontWeight.w700);
       await tester.tap(find.text('Task approved'));
       await tester.pumpAndSettle();
       expect(alerts.read, true);
+      expect(find.text('Notification'), findsOneWidget);
+      expect(
+        tester.widget<SelectableText>(find.byType(SelectableText)).data,
+        'Toilet Cleaning was approved.',
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      for (final text in notificationText) {
+        expect(tester.widget<Text>(text).style?.fontWeight, FontWeight.w400);
+      }
+      expect(tester.widget<Text>(date).style?.fontWeight, FontWeight.w400);
+      await tester.tap(message);
+      await tester.pumpAndSettle();
+      expect(find.text('Notification'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
@@ -143,9 +188,7 @@ void main() {
       await tester.scrollUntilVisible(find.text('Apply for leave'), 160);
       await tester.tap(find.text('Apply for leave'));
       await tester.pumpAndSettle();
-      expect(find.text('My requests'), findsOneWidget);
-      await tester.tap(find.text('Apply for leave'));
-      await tester.pumpAndSettle();
+      expect(find.text('Apply for leave'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('Supporting document (optional)'),
         150,
@@ -159,14 +202,56 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Start date'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      expect(find.text('Select start date'), findsOneWidget);
+      final localizations = MaterialLocalizations.of(
+        tester.element(find.text('Select start date')),
+      );
+      final today = malaysiaToday();
+      final todayLabel = localizations.formatFullDate(today);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is IconButton && widget.tooltip == 'Previous month',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.byTooltip(todayLabel));
       await tester.pumpAndSettle();
+      expect(
+        find.text('Note: You are applying for 1 day of leave.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.textContaining('Ends ·'));
+      await tester.tap(find.textContaining('Ends ·'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select end date'), findsOneWidget);
+      final tomorrow = DateTime(today.year, today.month, today.day + 1);
+      if (tomorrow.month != today.month) {
+        await tester.tap(find.byTooltip('Next month'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byTooltip(localizations.formatFullDate(tomorrow)));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Note: You are applying for 2 days of leave.'),
+        findsOneWidget,
+      );
       await tester.enterText(find.byType(TextFormField), 'Family event');
       await tester.ensureVisible(find.text('Submit request'));
       await tester.tap(find.text('Submit request'));
       await tester.pumpAndSettle();
       expect(leave.submitted, ('annual', 'Family event'));
-      expect(find.text('My requests'), findsOneWidget);
+      expect(find.text('My profile'), findsOneWidget);
+      await tester.ensureVisible(find.text('Leave history'));
+      await tester.tap(find.text('Leave history'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pending approval'), findsOneWidget);
+      expect(find.text('2 days'), findsOneWidget);
+      expect(find.text('Family event'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

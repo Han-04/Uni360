@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -10,6 +12,7 @@ import 'admin_approvals.dart';
 import 'admin_catalog.dart';
 import 'admin_data.dart';
 import 'admin_leave_requests.dart';
+import 'admin_overdue_tasks.dart';
 import 'admin_workforce.dart';
 
 class AdminDashboard extends StatelessWidget {
@@ -302,6 +305,8 @@ class _Workspace extends StatefulWidget {
 
 class _WorkspaceState extends State<_Workspace> {
   int index = 0;
+  int overdueCount = 0;
+  Timer? overdueTimer;
   static const labels = [
     'Account management',
     'Workforce management',
@@ -309,6 +314,7 @@ class _WorkspaceState extends State<_Workspace> {
     'Schedule Task',
     'Task approvals',
     'Leave requests',
+    'Overdue tasks',
   ];
   static const icons = [
     Icons.manage_accounts_outlined,
@@ -317,7 +323,35 @@ class _WorkspaceState extends State<_Workspace> {
     Icons.event_available_outlined,
     Icons.fact_check_outlined,
     Icons.event_busy_outlined,
+    Icons.warning_amber_rounded,
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(refreshOverdueCount());
+    overdueTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => refreshOverdueCount(),
+    );
+  }
+
+  @override
+  void dispose() {
+    overdueTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> refreshOverdueCount() async {
+    try {
+      final count = await widget.data.overdueCount();
+      if (mounted && overdueCount != count) {
+        setState(() => overdueCount = count);
+      }
+    } catch (_) {
+      // Keep the last count during a temporary connection failure.
+    }
+  }
 
   Widget sidebar({required bool compact}) => Material(
     color: AppColors.navy,
@@ -335,7 +369,12 @@ class _WorkspaceState extends State<_Workspace> {
               children: [
                 for (var i = 0; i < labels.length; i++)
                   ListTile(
-                    leading: Icon(icons[i], color: Colors.white70),
+                    leading: i == 6 && overdueCount > 0
+                        ? Badge.count(
+                            count: overdueCount,
+                            child: Icon(icons[i], color: Colors.white70),
+                          )
+                        : Icon(icons[i], color: Colors.white70),
                     title: Text(labels[i]),
                     textColor: Colors.white,
                     selected: i == index,
@@ -346,6 +385,7 @@ class _WorkspaceState extends State<_Workspace> {
                     ),
                     onTap: () {
                       setState(() => index = i);
+                      if (i == 6) unawaited(refreshOverdueCount());
                       if (compact) Navigator.of(context).pop();
                     },
                   ),
@@ -389,17 +429,19 @@ class _WorkspaceState extends State<_Workspace> {
   Widget build(BuildContext context) {
     final data = widget.data;
     final superAdmin = widget.account.role == AccountRole.superAdministrator;
-    final section = switch (index) {
-      0 => AdminAccounts(data: data, superAdmin: superAdmin),
-      1 => AdminWorkforce(data: data),
-      2 => AdminFacilities(data: data),
-      3 => AdminTaskTemplates(data: data, superAdmin: superAdmin),
-      4 => AdminApprovals(data: data),
-      _ => AdminLeaveRequests(data: data),
-    };
     return LayoutBuilder(
       builder: (context, size) {
         final compact = size.maxWidth < 820;
+        final padding = EdgeInsets.all(compact ? 16 : 32);
+        final section = switch (index) {
+          0 => AdminAccounts(data: data, superAdmin: superAdmin),
+          1 => AdminWorkforce(data: data),
+          2 => AdminFacilities(data: data, padding: padding),
+          3 => AdminTaskTemplates(data: data, superAdmin: superAdmin),
+          4 => AdminApprovals(data: data),
+          5 => AdminLeaveRequests(data: data),
+          _ => AdminOverdueTasks(data: data),
+        };
         return Scaffold(
           appBar: AppBar(
             leading: compact ? null : CurvedBackButton.forRoute(context),
@@ -411,15 +453,18 @@ class _WorkspaceState extends State<_Workspace> {
           drawer: compact ? Drawer(child: sidebar(compact: true)) : null,
           body: SafeArea(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (!compact)
                   SizedBox(width: 246, child: sidebar(compact: false)),
                 Expanded(
-                  child: SingleChildScrollView(
-                    key: ValueKey(index),
-                    padding: EdgeInsets.all(compact ? 16 : 32),
-                    child: section,
-                  ),
+                  child: index == 2
+                      ? section
+                      : SingleChildScrollView(
+                          key: ValueKey(index),
+                          padding: padding,
+                          child: section,
+                        ),
                 ),
               ],
             ),

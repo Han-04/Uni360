@@ -28,9 +28,11 @@ class WorkerCertification {
     required this.name,
     required this.number,
     required this.expiryDate,
+    this.loadDocumentUrl,
   });
   final String name;
   final String? number, expiryDate;
+  final Future<String> Function()? loadDocumentUrl;
 }
 
 class WorkerProfileRepository {
@@ -44,7 +46,7 @@ class WorkerProfileRepository {
         .select('''
       job_role,current_workload,employment_status,
       worker_skill(skill(skill_name)),
-      worker_certification(certification_name,certification_no,expiry_date)
+      worker_certification(certification_name,certification_no,expiry_date,document_path)
       ''')
         .eq('worker_id', workerId)
         .maybeSingle();
@@ -62,12 +64,22 @@ class WorkerProfileRepository {
         for (final item
             in (row['worker_certification'] as List)
                 .cast<Map<String, dynamic>>())
-          WorkerCertification(
-            name: item['certification_name'] as String,
-            number: item['certification_no'] as String?,
-            expiryDate: item['expiry_date'] as String?,
-          ),
+          _certification(item),
       ],
+    );
+  }
+
+  WorkerCertification _certification(Map<String, dynamic> row) {
+    final path = row['document_path'] as String?;
+    return WorkerCertification(
+      name: row['certification_name'] as String,
+      number: row['certification_no'] as String?,
+      expiryDate: row['expiry_date'] as String?,
+      loadDocumentUrl: path == null
+          ? null
+          : () => _client.storage
+                .from('worker-certificates')
+                .createSignedUrl(path, 300),
     );
   }
 }

@@ -20,14 +20,14 @@ class _AdminApprovalsState extends State<AdminApprovals> {
   Map<String, AdminRow> workers = {};
 
   Future<List<AdminRow>> load() async {
-    final rows = await data
-        .table('preventive_work_order')
-        .select('$orderFields,submitted_at')
-        .eq('status', 'submitted')
-        .isFilter('cancelled_at', null)
-        .order('submitted_at', ascending: true)
-        .order('id')
-        .range(page * 25, (page + 1) * 25);
+    final rows = await data.withCatalogWorkOrders(
+      (query) async => query
+          .eq('status', 'submitted')
+          .order('submitted_at', ascending: true)
+          .order('id')
+          .range(page * 25, (page + 1) * 25),
+      fields: '$orderFields,submitted_at',
+    );
     if (rows.isNotEmpty && workers.isEmpty) {
       workers = await data.workerDirectory();
     }
@@ -42,15 +42,12 @@ class _AdminApprovalsState extends State<AdminApprovals> {
   }
 
   Future<(AdminRow, List<String?>)> loadSubmission(String id) async {
-    final row = await data
-        .table('preventive_work_order')
-        .select(
+    final row = await data.withCatalogWorkOrders(
+      (query) async =>
+          query.eq('id', id).eq('status', 'submitted').maybeSingle(),
+      fields:
           '$orderFields,submitted_at,instructions,checklist,checked_items,worker_notes,location_verified_at,preventive_work_evidence(path)',
-        )
-        .eq('id', id)
-        .eq('status', 'submitted')
-        .isFilter('cancelled_at', null)
-        .maybeSingle();
+    );
     if (row == null) {
       throw const FormatException('This task is no longer awaiting review.');
     }

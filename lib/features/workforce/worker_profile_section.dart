@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/link.dart';
 
 import '../../core/widgets/curved_back_button.dart';
 
@@ -150,22 +151,7 @@ class _CredentialList extends StatelessWidget {
         : [
             for (final certificate
                 in profile?.certifications ?? const <WorkerCertification>[])
-              ListTile(
-                leading: Icon(type.icon),
-                title: Text(certificate.name),
-                subtitle: switch ((
-                  certificate.number,
-                  certificate.expiryDate,
-                )) {
-                  (null, null) => null,
-                  (final number, final expiry) => Text(
-                    [
-                      if (number != null) 'Certificate ID · $number',
-                      if (expiry != null) 'Expires · $expiry',
-                    ].join('\n'),
-                  ),
-                },
-              ),
+              _CertificationTile(certificate: certificate),
           ];
     return ListView(
       padding: const EdgeInsets.all(18),
@@ -175,15 +161,13 @@ class _CredentialList extends StatelessWidget {
             title: skills ? 'No skills yet' : 'No certifications yet',
             message:
                 '${type.title} will appear here once your administrator adds them.',
-            illustration: skills
-                ? const ExcludeSemantics(child: _SkillsIllustration())
-                : Image.asset(
-                    'assets/workforce/no-certifications.png',
-                    width: 100,
-                    height: 100,
-                    fit: BoxFit.contain,
-                    excludeFromSemantics: true,
-                  ),
+            illustration: const Image(
+              image: AssetImage('assets/workforce/empty-credentials.png'),
+              width: 120,
+              height: 120,
+              fit: BoxFit.contain,
+              excludeFromSemantics: true,
+            ),
           )
         else
           SurfaceCard(
@@ -195,27 +179,86 @@ class _CredentialList extends StatelessWidget {
   }
 }
 
-class _SkillsIllustration extends StatelessWidget {
-  const _SkillsIllustration();
+class _CertificationTile extends StatelessWidget {
+  const _CertificationTile({required this.certificate});
+
+  final WorkerCertification certificate;
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-    dimension: 100,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        const CircleAvatar(radius: 41, backgroundColor: WorkerColors.tint),
-        const Icon(
-          Icons.handyman_outlined,
-          size: 44,
-          color: WorkerColors.deepBlue,
+  Widget build(BuildContext context) {
+    final number = certificate.number;
+    final expiry = certificate.expiryDate;
+    final loadDocumentUrl = certificate.loadDocumentUrl;
+    return ListTile(
+      leading: const Icon(Icons.workspace_premium_outlined),
+      title: Text(certificate.name),
+      subtitle: number == null && expiry == null && loadDocumentUrl == null
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (number != null || loadDocumentUrl != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          number == null
+                              ? 'Certificate document'
+                              : 'Certificate ID · $number',
+                        ),
+                      ),
+                      if (loadDocumentUrl != null)
+                        IconButton(
+                          tooltip: 'View certificate document',
+                          icon: const Icon(Icons.description_outlined),
+                          color: WorkerColors.blue,
+                          onPressed: () =>
+                              _openDocument(context, loadDocumentUrl),
+                        ),
+                    ],
+                  ),
+                if (expiry != null) Text('Expires · $expiry'),
+              ],
+            ),
+    );
+  }
+
+  void _openDocument(
+    BuildContext context,
+    Future<String> Function() loadDocumentUrl,
+  ) {
+    final url = loadDocumentUrl();
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(certificate.name),
+        content: FutureBuilder<String>(
+          future: url,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Text('Could not open the certificate. Try again.');
+            }
+            final link = snapshot.data;
+            if (link == null) return const LinearProgressIndicator();
+            return Link(
+              uri: Uri.parse(link),
+              target: LinkTarget.blank,
+              builder: (context, open) => TextButton.icon(
+                onPressed: open,
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open certificate document'),
+              ),
+            );
+          },
         ),
-        const Positioned(
-          right: 8,
-          top: 8,
-          child: Icon(Icons.auto_awesome, size: 23, color: WorkerColors.blue),
-        ),
-      ],
-    ),
-  );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 }
