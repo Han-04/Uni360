@@ -6,10 +6,12 @@ import 'package:uni360/app/uni360_app.dart';
 import 'package:uni360/core/theme/app_theme.dart';
 import 'package:uni360/features/preventive/application/preventive_controller.dart';
 import 'package:uni360/features/preventive/data/assigned_work_repository.dart';
+import 'package:uni360/features/preventive/data/campus_position.dart';
 import 'package:uni360/features/preventive/data/mock_preventive_repository.dart';
 import 'package:uni360/features/preventive/data/mock_verification_service.dart';
 import 'package:uni360/features/preventive/presentation/screens/assigned_work_details.dart';
 import 'package:uni360/features/preventive/presentation/screens/worker_shell.dart';
+import 'package:uni360/features/workforce/worker_profile_repository.dart';
 import 'package:uni360/shared/account/account.dart';
 import 'package:uni360/shared/account/account_controller.dart';
 
@@ -43,6 +45,7 @@ class TestWorkActions implements AssignedWorkActions {
   final checkedItems = <int>{};
   final photoPaths = <String>[];
   String notes = '';
+  DateTime? location;
 
   @override
   Future<AssignedWork> loadOrder(String workerId, String orderId) async {
@@ -60,6 +63,7 @@ class TestWorkActions implements AssignedWorkActions {
       checkedItems: Set.of(checkedItems),
       photoPaths: List.of(photoPaths),
       notes: notes,
+      locationVerifiedAt: location,
     );
   }
 
@@ -79,14 +83,27 @@ class TestWorkActions implements AssignedWorkActions {
   }
 
   @override
-  Future<void> submit(String orderId, String notes) async {
+  Future<void> submit(
+    String orderId,
+    String notes,
+    CampusPosition position,
+  ) async {
     this.notes = notes;
     status = AssignedWorkStatus.submitted;
   }
 
   @override
-  Future<void> attachPhoto(String workerId, String orderId, Uint8List bytes) =>
-      throw UnimplementedError();
+  Future<void> verifyLocation(String orderId, CampusPosition position) async {
+    location = position.timestamp;
+  }
+
+  @override
+  Future<void> attachPhoto(
+    String workerId,
+    String orderId,
+    Uint8List bytes,
+    CampusPosition position,
+  ) => throw UnimplementedError();
 
   @override
   Future<String> photoUrl(String path) => throw UnimplementedError();
@@ -107,11 +124,14 @@ void main() {
           initial: actions.initial,
           workerId: 'assigned-worker',
           actions: actions,
+          readPosition: () async =>
+              CampusPosition(3.216, 101.729, 10, DateTime.utc(2026, 11, 17)),
         ),
       ),
     );
     final checklist = find.byType(CheckboxListTile);
     final submit = find.widgetWithText(FilledButton, 'Submit for approval');
+    final camera = find.widgetWithText(OutlinedButton, 'Take photo');
     expect(tester.widget<CheckboxListTile>(checklist).onChanged, isNull);
     await tester.tap(find.text('Start task'));
     await tester.pumpAndSettle();
@@ -122,9 +142,19 @@ void main() {
     await reveal(tester, submit);
     expect(tester.widget<FilledButton>(submit).onPressed, isNull);
 
-    actions.photoPaths.add('evidence.jpg');
+    actions.photoPaths.add('camera-photo.jpg');
     await tester.tap(find.byTooltip('Refresh work order'));
     await tester.pumpAndSettle();
+    await reveal(tester, submit);
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+    expect(find.text('Upload photo'), findsNothing);
+    await reveal(tester, camera);
+    expect(tester.widget<OutlinedButton>(camera).onPressed, isNull);
+    await reveal(tester, find.text('Verify location'));
+    await tester.tap(find.text('Verify location'));
+    await tester.pumpAndSettle();
+    await reveal(tester, camera);
+    expect(tester.widget<OutlinedButton>(camera).onPressed, isNotNull);
     await reveal(tester, submit);
     await tester.tap(submit);
     await tester.pumpAndSettle();
@@ -134,6 +164,42 @@ void main() {
     expect(tester.widget<CheckboxListTile>(checklist).onChanged, isNull);
     expect(find.text('Upload photo'), findsNothing);
   });
+
+  testWidgets(
+    'Desktop work order shows the phone-only actions and the app requirement',
+    (tester) async {
+      final actions = TestWorkActions()..status = AssignedWorkStatus.inProgress;
+      final order = await actions.loadOrder(
+        'assigned-worker',
+        actions.initial.id,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AssignedWorkDetails(
+            initial: order,
+            workerId: 'assigned-worker',
+            actions: actions,
+          ),
+        ),
+      );
+
+      final verify = find.widgetWithText(OutlinedButton, 'Verify location');
+      final camera = find.widgetWithText(OutlinedButton, 'Take photo');
+      await reveal(tester, verify);
+      expect(tester.widget<OutlinedButton>(verify).onPressed, isNull);
+      expect(
+        find.text('GPS verification requires the Uni360 Android or iOS app.'),
+        findsOneWidget,
+      );
+      await reveal(tester, camera);
+      expect(tester.widget<OutlinedButton>(camera).onPressed, isNull);
+      expect(
+        find.text('Photo capture requires the Uni360 Android or iOS app.'),
+        findsOneWidget,
+      );
+    },
+    variant: const TargetPlatformVariant({TargetPlatform.windows}),
+  );
 
   testWidgets('Live worker task list requests the signed-in worker and date', (
     tester,
@@ -170,6 +236,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Approved toilet cleaning'));
     await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.reply_rounded), findsOneWidget);
     expect(find.text('Clean the assigned washroom.'), findsOneWidget);
     expect(find.text('Clean fixtures'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -215,7 +282,10 @@ void main() {
     expect(tester.getSize(find.byType(Scaffold)), const Size(430, 932));
     await signIn(tester);
     expect(tester.getSize(find.byType(Scaffold)), const Size(430, 932));
-    expect(tester.getSize(find.byType(NavigationBar)).width, 430);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('worker-footer'))).width,
+      430,
+    );
     await tester.tap(find.text('Approved toilet cleaning'));
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(Scaffold)), const Size(430, 932));
@@ -231,21 +301,64 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
-        Uni360App(accounts: TestAccounts(), loadAssignedWork: noWork),
+        Uni360App(
+          accounts: TestAccounts(),
+          loadAssignedWork: noWork,
+          loadWorkerProfile: (_) async => WorkerProfile(
+            jobRole: 'Cleaner',
+            workload: 0,
+            employmentStatus: 'active',
+            skills: [
+              if (width != 320) const WorkerSkill(name: 'Facility cleaning'),
+            ],
+            certifications: [
+              if (width == 600)
+                const WorkerCertification(
+                  name: 'Workplace safety',
+                  number: 'WS-01',
+                  expiryDate: null,
+                ),
+            ],
+          ),
+        ),
       );
       await signIn(tester);
       expect(find.text('Today’s assignments'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      final tasksLabel = find.text('My tasks');
+      final before = tester.getCenter(tasksLabel).dy;
       await tester.tap(find.text('My tasks'));
       await tester.pumpAndSettle();
+      expect(tester.getCenter(tasksLabel).dy, closeTo(before, 0.01));
       expect(find.text('My work orders'), findsOneWidget);
       expect(find.text('No assigned tasks'), findsOneWidget);
-      await tester.tap(find.text('Alerts'));
+      await tester.tap(find.text('Notifications'));
       await tester.pumpAndSettle();
-      expect(find.text('Nothing new yet'), findsOneWidget);
+      expect(find.byIcon(Icons.reply_rounded), findsOneWidget);
+      expect(find.text('No notifications yet'), findsOneWidget);
       await tester.tap(find.text('Profile'));
       await tester.pumpAndSettle();
-      expect(find.text('Personal details'), findsOneWidget);
+      expect(find.text('Personal details'), findsNothing);
+      expect(find.text('Job role'), findsOneWidget);
+      expect(find.text('Cleaner'), findsOneWidget);
+      expect(find.text('Facility cleaning'), findsNothing);
+      await tester.tap(find.text('Skills'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.reply_rounded), findsOneWidget);
+      expect(
+        find.text(width == 320 ? 'No skills yet' : 'Facility cleaning'),
+        findsOneWidget,
+      );
+      expect(find.text('Job role'), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Certifications'));
+      await tester.pumpAndSettle();
+      expect(find.text('Facility cleaning'), findsNothing);
+      expect(
+        find.text(width == 600 ? 'Workplace safety' : 'No certifications yet'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

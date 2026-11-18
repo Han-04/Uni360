@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/curved_back_button.dart';
+
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_theme.dart';
@@ -156,6 +159,7 @@ class _WorkOrderScreenState extends State<WorkOrderScreen> {
           _attested;
       return Scaffold(
         appBar: AppBar(
+          leading: CurvedBackButton.forRoute(context),
           title: const Text('Work order'),
           actions: [
             IconButton(

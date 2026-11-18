@@ -14,9 +14,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scan facility QR codes and take photos as evidence of Uni360 tasks.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Verify that you are at the assigned campus facility when checking in.</string>
+	<string>Verify your location when checking in or submitting campus maintenance work.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Attach existing photos to Uni360 incident reports or preventive work orders.</string>
+	<string>Choose photos for Uni360 incident reports or your account profile.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

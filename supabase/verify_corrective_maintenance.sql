@@ -40,10 +40,11 @@ begin
 
   insert into public.preventive_zone(id, name) values (zone, 'Corrective test ' || zone);
   insert into maintenance_api.preventive_zone_admin(zone_id, administrator_id) values (zone, admin_id);
-  insert into public.preventive_facility(id, zone_id, name, facility_type)
-  values (facility, zone, 'Verification facility', 'building');
+  insert into uni360_private.facility_access_scope(facility_id, zone_id) values (facility, zone);
+  insert into public.preventive_facility(id, name, facility_type)
+  values (facility, 'Verification facility', 'building');
 
-  update public.worker_profile set job_role = 'Plumber', assigned_zone = 'Corrective test ' || zone,
+  update public.worker_profile set job_role = 'Plumber',
     standby_status = true, employment_status = 'active' where worker_id = fixture_worker;
   insert into maintenance_api.worker_availability(worker_id, availability, shift_start, shift_end, availability_status, leave_status)
   values (fixture_worker, 'Scheduled', now() - interval '30 minutes', now() + interval '3 hours', 'Available', 'None');

@@ -1,31 +1,346 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/photo_upload.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/curved_back_button.dart';
+import '../../../features/workforce/worker_profile_repository.dart';
+import '../../../features/workforce/worker_profile_section.dart';
+import '../account.dart';
 import '../account_controller.dart';
 import '../account_repository.dart';
+import '../supabase_account_repository.dart';
 
-class AccountProfileScreen extends StatefulWidget {
+class AccountProfileScreen extends StatelessWidget {
   const AccountProfileScreen({
     super.key,
     required this.controller,
     this.workforceDetails,
+    this.loadWorkerProfile,
+    this.workerStatus,
   });
   final AccountController controller;
   final Widget? workforceDetails;
+  final WorkerProfileLoader? loadWorkerProfile;
+  final Widget? workerStatus;
+
   @override
-  State<AccountProfileScreen> createState() => _ProfileScreenState();
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final profile = controller.account;
+      if (profile == null) return const SizedBox.shrink();
+      if (profile.role == AccountRole.worker) {
+        return Theme(
+          data: buildWorkerTheme(Theme.of(context)),
+          child: ColoredBox(
+            color: WorkerColors.background,
+            child: Builder(
+              builder: (context) => _workerProfile(context, profile),
+            ),
+          ),
+        );
+      }
+      return ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Center(
+            child: AccountAvatar(controller: controller, profile: profile),
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              profile.name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 21),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Center(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              children: [
+                Text(
+                  profile.role.label,
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+                ?workerStatus,
+              ],
+            ),
+          ),
+          const SectionHeading('Personal details'),
+          SurfaceCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ReadOnly(label: 'FULL NAME', value: profile.name),
+                const SizedBox(height: 16),
+                _ReadOnly(
+                  label: 'PHONE NUMBER',
+                  value: profile.phone.isEmpty ? 'Not added' : profile.phone,
+                ),
+                const SizedBox(height: 16),
+                _ReadOnly(label: 'EMPLOYEE ID', value: profile.employeeId),
+                const SizedBox(height: 16),
+                _ReadOnly(label: 'EMAIL', value: profile.email),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => _edit(context, profile),
+                  child: const Text('Update Profile'),
+                ),
+              ],
+            ),
+          ),
+          ?workforceDetails,
+          const SectionHeading('Account'),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => _PasswordScreen(controller: controller),
+              ),
+            ),
+            icon: const Icon(Icons.lock_outline),
+            label: const Text('Change password'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: controller.signOut,
+            icon: const Icon(Icons.logout),
+            label: const Text('Sign out'),
+          ),
+        ],
+      );
+    },
+  );
+
+  Future<void> _edit(BuildContext context, Account profile) async {
+    final theme = Theme.of(context);
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => Theme(
+          data: theme,
+          child: _EditProfile(controller: controller, original: profile),
+        ),
+      ),
+    );
+    if (changed == true && context.mounted) {
+      showMessage(context, 'Profile updated.');
+    }
+  }
+
+  Widget _workerProfile(BuildContext context, Account profile) => ListView(
+    padding: EdgeInsets.fromLTRB(
+      18,
+      10,
+      18,
+      24 + MediaQuery.paddingOf(context).bottom,
+    ),
+    children: [
+      SurfaceCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            AccountAvatar(
+              controller: controller,
+              profile: profile,
+              dimension: 52,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    profile.name,
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    profile.email,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [Text(profile.role.label), ?workerStatus],
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Edit profile',
+              color: WorkerColors.blue,
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _edit(context, profile),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+      WorkerProfileSection(
+        workerId: profile.id,
+        load: loadWorkerProfile,
+        details: (jobRole) => SurfaceCard(
+          padding: const EdgeInsets.all(6),
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('Employee ID'),
+                subtitle: Text(profile.employeeId),
+              ),
+              ListTile(
+                leading: const Icon(Icons.phone_outlined),
+                title: const Text('Phone number'),
+                subtitle: Text(
+                  profile.phone.isEmpty ? 'Not added' : profile.phone,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.work_outline),
+                title: const Text('Job role'),
+                subtitle: Text(jobRole),
+              ),
+              ListTile(
+                title: const Text('Update Profile'),
+                leading: const Icon(
+                  Icons.manage_accounts_outlined,
+                  color: WorkerColors.blue,
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _edit(context, profile),
+              ),
+            ],
+          ),
+        ),
+      ),
+      ?workforceDetails,
+      const SectionHeading('Account'),
+      SurfaceCard(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('Change password'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => _PasswordScreen(controller: controller),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: controller.signOut,
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
-class _ProfileScreenState extends State<AccountProfileScreen> {
+class AccountAvatar extends StatefulWidget {
+  const AccountAvatar({
+    super.key,
+    required this.controller,
+    required this.profile,
+    this.preview,
+    this.dimension = 76,
+  });
+  final AccountController controller;
+  final Account profile;
+  final Uint8List? preview;
+  final double dimension;
+
+  @override
+  State<AccountAvatar> createState() => _AccountAvatarState();
+}
+
+class _AccountAvatarState extends State<AccountAvatar> {
+  late var _url = widget.controller.profilePhotoUrl(widget.profile);
+
+  @override
+  void didUpdateWidget(AccountAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile.photoPath != widget.profile.photoPath) {
+      _url = widget.controller.profilePhotoUrl(widget.profile);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder(
+    future: _url,
+    builder: (context, snapshot) {
+      final fallback = Center(
+        child: Text(
+          widget.profile.name
+              .trim()
+              .split(RegExp(r'\s+'))
+              .take(2)
+              .where((part) => part.isNotEmpty)
+              .map((part) => part.characters.first)
+              .join()
+              .toUpperCase(),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: widget.dimension * .35,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+      final preview = widget.preview;
+      final url = snapshot.data;
+      return ClipOval(
+        child: ColoredBox(
+          color: Theme.of(context).colorScheme.primary,
+          child: SizedBox.square(
+            dimension: widget.dimension,
+            child: preview != null
+                ? Image.memory(
+                    preview,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => fallback,
+                  )
+                : url != null
+                ? Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => fallback,
+                  )
+                : fallback,
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _EditProfile extends StatefulWidget {
+  const _EditProfile({required this.controller, required this.original});
+  final AccountController controller;
+  final Account original;
+
+  @override
+  State<_EditProfile> createState() => _EditProfileState();
+}
+
+class _EditProfileState extends State<_EditProfile> {
   final _form = GlobalKey<FormState>();
-  late final _name = TextEditingController(
-    text: widget.controller.account!.name,
-  );
-  late final _phone = TextEditingController(
-    text: widget.controller.account!.phone,
-  );
-  bool _saving = false;
+  late final _name = TextEditingController(text: widget.original.name);
+  late final _phone = TextEditingController(text: widget.original.phone);
+  Uint8List? _photo;
+  String? _error;
+  bool _busy = false;
+
   @override
   void dispose() {
     _name.dispose();
@@ -33,144 +348,146 @@ class _ProfileScreenState extends State<AccountProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _password() async {
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _PasswordScreen(controller: widget.controller),
-      ),
-    );
+  Future<void> _choosePhoto() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+        requestFullMetadata: false,
+      );
+      if (picked == null || !mounted) return;
+      if (await picked.length() > SupabaseAccountRepository.maxPhotoBytes) {
+        throw const FormatException('Choose a photo up to 5 MB.');
+      }
+      final bytes = await picked.readAsBytes();
+      photoUploadType(bytes);
+      if (mounted) setState(() => _photo = bytes);
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Exception {
+      if (mounted) {
+        setState(() => _error = 'Could not open the photo. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.controller.updateProfile(
+        _name.text,
+        _phone.text,
+        photo: _photo,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on AccountException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Exception {
+      if (mounted) {
+        setState(() => _error = 'Could not update your profile. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final profile = widget.controller.account!;
-    final initials = profile.name
-        .split(' ')
-        .where((s) => s.isNotEmpty)
-        .take(2)
-        .map((s) => s[0])
-        .join();
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Center(
-          child: CircleAvatar(
-            radius: 38,
-            backgroundColor: AppColors.teal,
-            child: Text(
-              initials,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 27,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
-            profile.name,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 21),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Center(
-          child: Text(
-            profile.role.label,
-            style: const TextStyle(color: AppColors.muted),
-          ),
-        ),
-        const SectionHeading('Personal details'),
-        Form(
-          key: _form,
-          child: SurfaceCard(
-            child: Column(
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_busy,
+    child: Scaffold(
+      appBar: AppBar(
+        leading: widget.original.role == AccountRole.worker
+            ? CurvedBackButton.forRoute(context)
+            : null,
+        title: const Text('Edit profile'),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
               children: [
-                TextFormField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Full name'),
-                  textCapitalization: TextCapitalization.words,
-                  maxLength: 120,
-                  validator: (v) => (v?.trim().length ?? 0) < 2
-                      ? 'Enter your full name.'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _phone,
-                  decoration: const InputDecoration(labelText: 'Phone number'),
-                  keyboardType: TextInputType.phone,
-                  validator: (value) {
-                    final phone = value?.trim() ?? '';
-                    return phone.isEmpty ||
-                            RegExp(r'^\+?[0-9 ()-]{8,20}$').hasMatch(phone)
-                        ? null
-                        : 'Enter a valid phone number.';
-                  },
-                ),
-                const SizedBox(height: 20),
-                _ReadOnly(label: 'EMPLOYEE ID', value: profile.employeeId),
-                const SizedBox(height: 16),
-                _ReadOnly(label: 'EMAIL', value: profile.email),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _saving
-                        ? null
-                        : () async {
-                            if (!_form.currentState!.validate()) {
-                              return;
-                            }
-                            setState(() => _saving = true);
-                            try {
-                              await widget.controller.updateProfile(
-                                _name.text,
-                                _phone.text,
-                              );
-                              if (context.mounted) {
-                                showMessage(context, 'Profile saved.');
-                              }
-                            } on AccountException catch (error) {
-                              if (context.mounted) {
-                                showMessage(context, error.message);
-                              }
-                            } on Exception {
-                              if (context.mounted) {
-                                showMessage(
-                                  context,
-                                  'Could not save your profile. Try again.',
-                                );
-                              }
-                            } finally {
-                              if (mounted) setState(() => _saving = false);
-                            }
-                          },
-                    child: Text(_saving ? 'Saving…' : 'Save profile'),
+                Form(
+                  key: _form,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: AccountAvatar(
+                          controller: widget.controller,
+                          profile: widget.original,
+                          preview: _photo,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _choosePhoto,
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Choose profile photo'),
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: _name,
+                        enabled: !_busy,
+                        maxLength: 120,
+                        decoration: const InputDecoration(
+                          labelText: 'Full name',
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                        validator: (value) => (value?.trim().length ?? 0) < 2
+                            ? 'Enter your full name.'
+                            : null,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _phone,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone number',
+                        ),
+                        validator: (value) {
+                          final phone = value?.trim() ?? '';
+                          return phone.isEmpty ||
+                                  RegExp(r'^\+?[0-9 ()-]{8,20}$')
+                                      .hasMatch(phone)
+                              ? null
+                              : 'Enter a valid phone number.';
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      if (_error case final error?)
+                        InfoBanner(error, warning: true),
+                      FilledButton(
+                        onPressed: _busy ? null : _save,
+                        child: Text(_busy ? 'Please wait…' : 'Update Profile'),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
         ),
-        ?widget.workforceDetails,
-        const SectionHeading('Account'),
-        OutlinedButton.icon(
-          onPressed: _password,
-          icon: const Icon(Icons.lock_outline),
-          label: const Text('Change password'),
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () => widget.controller.signOut(),
-          icon: const Icon(Icons.logout),
-          label: const Text('Sign out'),
-        ),
-      ],
-    );
-  }
+      ),
+    ),
+  );
 }
 
 class _ReadOnly extends StatelessWidget {
@@ -222,7 +539,12 @@ class _PasswordScreenState extends State<_PasswordScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Change password')),
+    appBar: AppBar(
+      leading: widget.controller.account?.role == AccountRole.worker
+          ? CurvedBackButton.forRoute(context)
+          : null,
+      title: const Text('Change password'),
+    ),
     body: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),

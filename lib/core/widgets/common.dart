@@ -77,15 +77,17 @@ class EmptyState extends StatelessWidget {
     required this.title,
     required this.message,
     this.icon = Icons.task_alt,
+    this.illustration,
   });
   final String title, message;
   final IconData icon;
+  final Widget? illustration;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 20),
     child: Column(
       children: [
-        Icon(icon, size: 44, color: AppColors.teal),
+        illustration ?? Icon(icon, size: 44, color: AppColors.teal),
         const SizedBox(height: 16),
         Text(
           title,

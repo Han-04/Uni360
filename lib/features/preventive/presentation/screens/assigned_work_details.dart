@@ -1,11 +1,16 @@
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+
+import '../../../../core/widgets/curved_back_button.dart';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/common.dart';
 import '../../data/assigned_work_repository.dart';
+import '../../data/campus_position.dart';
+import 'work_evidence_camera.dart';
 
 String assignedWorkTime(AssignedWork order) {
   final end = sameDay(order.starts, order.ends)
@@ -20,11 +25,13 @@ class AssignedWorkDetails extends StatefulWidget {
     required this.initial,
     required this.workerId,
     this.actions,
+    this.readPosition = readCampusPosition,
   });
 
   final AssignedWork initial;
   final String workerId;
   final AssignedWorkActions? actions;
+  final Future<CampusPosition> Function() readPosition;
 
   @override
   State<AssignedWorkDetails> createState() => _AssignedWorkDetailsState();
@@ -34,6 +41,7 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
   late AssignedWork _order = widget.initial;
   late final _notes = TextEditingController(text: widget.initial.notes);
   bool _busy = false;
+  bool _verifyAgain = false;
   String? _error;
   bool get _editing =>
       !_busy &&
@@ -47,8 +55,9 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
   }
 
   Future<void> _change(
-    Future<void> Function(AssignedWorkActions) action,
-  ) async {
+    Future<void> Function(AssignedWorkActions) action, {
+    bool checksLocation = false,
+  }) async {
     final actions = widget.actions;
     if (actions == null || _busy) return;
     setState(() {
@@ -58,46 +67,56 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
     try {
       await action(actions);
       final order = await actions.loadOrder(widget.workerId, _order.id);
-      if (mounted) setState(() => _order = order);
+      if (mounted) {
+        setState(() {
+          _order = order;
+          if (checksLocation) _verifyAgain = false;
+        });
+      }
     } on PostgrestException catch (error) {
       if (mounted) {
-        setState(
-          () => _error = ['42501', '23514'].contains(error.code)
+        setState(() {
+          if (checksLocation) _verifyAgain = true;
+          _error = ['42501', '23514'].contains(error.code)
               ? error.message
-              : 'Could not save the work order. Refresh and try again.',
-        );
+              : 'Could not save the work order. Refresh and try again.';
+        });
       }
     } on FormatException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() {
+          if (checksLocation) _verifyAgain = true;
+          _error = error.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Could not finish the request. Refresh and try again.',
-        );
+        setState(() {
+          if (checksLocation) _verifyAgain = true;
+          _error = 'Could not finish the request. Refresh and try again.';
+        });
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _pickPhoto(ImageSource source) => _change((actions) async {
-    final photo = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 1920,
-      maxHeight: 1920,
-      imageQuality: 85,
-      requestFullMetadata: false,
+  Future<void> _verifyLocation() => _change((actions) async {
+    await actions.verifyLocation(_order.id, await widget.readPosition());
+  }, checksLocation: true);
+
+  Future<void> _takePhoto() => _change((actions) async {
+    final photo = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(builder: (_) => const WorkEvidenceCamera()),
     );
     if (photo == null || !mounted) return;
-    if (await photo.length() > AssignedWorkRepository.maxPhotoBytes) {
-      throw const FormatException('Choose a photo under 10 MB.');
-    }
     await actions.attachPhoto(
       widget.workerId,
       _order.id,
-      await photo.readAsBytes(),
+      photo,
+      await widget.readPosition(),
     );
-  });
+  }, checksLocation: true);
 
   Future<void> _submit() async {
     final accepted = await showDialog<bool>(
@@ -105,7 +124,7 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
       builder: (context) => AlertDialog(
         title: const Text('Submit for approval?'),
         content: const Text(
-          'Your administrator will review the checklist and photos.',
+          'Uni360 will check your location again before sending the checklist and photos to your administrator.',
         ),
         actions: [
           TextButton(
@@ -120,7 +139,13 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
       ),
     );
     if (accepted == true && mounted) {
-      await _change((actions) => actions.submit(_order.id, _notes.text));
+      await _change((actions) async {
+        await actions.submit(
+          _order.id,
+          _notes.text,
+          await widget.readPosition(),
+        );
+      }, checksLocation: true);
     }
   }
 
@@ -158,18 +183,17 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
   @override
   Widget build(BuildContext context) {
     final inProgress = _order.status == AssignedWorkStatus.inProgress;
+    final verified = _order.locationVerifiedAt != null && !_verifyAgain;
+    final phoneApp = supportsCampusCapture;
+    final canVerify = _editing && phoneApp;
     final canSubmit =
-        _editing &&
+        canVerify &&
+        verified &&
         _order.checkedItems.length == _order.checklist.length &&
-        _order.photoPaths.isNotEmpty;
-    final camera =
-        !kIsWeb &&
-        [
-          TargetPlatform.android,
-          TargetPlatform.iOS,
-        ].contains(defaultTargetPlatform);
+        _order.hasCameraPhoto;
     return Scaffold(
       appBar: AppBar(
+        leading: CurvedBackButton.forRoute(context),
         title: const Text('Work order'),
         actions: [
           if (widget.actions != null)
@@ -204,6 +228,25 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
             ],
             const SectionHeading('Instructions'),
             Text(_order.instructions),
+            if (inProgress || _order.locationVerifiedAt != null) ...[
+              const SectionHeading('Location verification'),
+              if (verified)
+                const Text('Verified inside TAR UMT Kuala Lumpur campus')
+              else
+                const Text(
+                  'Verify that you are inside TAR UMT Kuala Lumpur campus.',
+                ),
+              if (inProgress)
+                OutlinedButton.icon(
+                  onPressed: canVerify ? _verifyLocation : null,
+                  icon: const Icon(Icons.my_location),
+                  label: Text(verified ? 'Verify again' : 'Verify location'),
+                ),
+              if (inProgress && !phoneApp)
+                const Text(
+                  'GPS verification requires the Uni360 Android or iOS app.',
+                ),
+            ],
             if (_order.checklist.isNotEmpty) ...[
               const SectionHeading('Checklist'),
               for (final (index, item) in _order.checklist.indexed)
@@ -241,27 +284,17 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
                   onTap: widget.actions == null ? null : () => _viewPhoto(path),
                 ),
               if (inProgress)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (camera)
-                      OutlinedButton.icon(
-                        onPressed: _editing
-                            ? () => _pickPhoto(ImageSource.camera)
-                            : null,
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        label: const Text('Take photo'),
-                      ),
-                    OutlinedButton.icon(
-                      onPressed: _editing
-                          ? () => _pickPhoto(ImageSource.gallery)
-                          : null,
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Upload photo'),
-                    ),
-                  ],
+                OutlinedButton.icon(
+                  onPressed: canVerify && verified ? _takePhoto : null,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Take photo'),
                 ),
+              if (inProgress && !phoneApp)
+                const Text(
+                  'Photo capture requires the Uni360 Android or iOS app.',
+                )
+              else if (inProgress && !verified)
+                const Text('Verify your location to enable the camera.'),
             ],
             if (inProgress) ...[
               const SizedBox(height: 16),
@@ -274,9 +307,9 @@ class _AssignedWorkDetailsState extends State<AssignedWorkDetails> {
                 ),
               ),
               const SizedBox(height: 12),
-              if (!canSubmit)
+              if (phoneApp && !canSubmit)
                 const Text(
-                  'Tick all checklist items and upload at least one photo.',
+                  'Verify your location, tick all checklist items and take at least one photo.',
                 ),
               FilledButton(
                 onPressed: canSubmit ? _submit : null,

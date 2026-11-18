@@ -27,7 +27,11 @@ class AccountController extends ChangeNotifier {
   Account? get account => _account;
   bool get busy => _busy;
 
-  Future<void> signIn(String email, String password) async {
+  Future<void> signIn(
+    String email,
+    String password, {
+    bool administratorOnly = false,
+  }) async {
     if (_busy || _account != null) return;
     _busy = true;
     sessionMessage = null;
@@ -48,6 +52,17 @@ class AccountController extends ChangeNotifier {
           // The Supabase client has already cleared its local session.
         }
         throw const AccountException('Use Admin login on the Uni360 website.');
+      }
+      if (administratorOnly && !signedIn.role.isAdministrator) {
+        try {
+          await _repository.signOut();
+        } on Exception {
+          // The repository clears its local session before remote sign-out.
+        }
+        throw const AccountException(
+          'Use an Administrator or Super Administrator account.',
+        );
+      }
       }
       _account = signedIn;
       lastActivity = DateTime.now();
@@ -86,7 +101,11 @@ class AccountController extends ChangeNotifier {
     }
   }
 
-  Future<void> updateProfile(String name, String phone) async {
+  Future<void> updateProfile(
+    String name,
+    String phone, {
+    Uint8List? photo,
+  }) async {
     touch();
     final current = _account;
     if (current == null) throw const AccountException('Sign in again.');
@@ -94,12 +113,16 @@ class AccountController extends ChangeNotifier {
       current,
       name.trim(),
       phone.trim(),
+      photo: photo,
     );
     if (!_disposed && identical(_account, current)) {
       _account = updated;
       notifyListeners();
     }
   }
+
+  Future<String?> profilePhotoUrl(Account account) =>
+      _repository.photoUrl(account);
 
   Future<void> changePassword(String current, String next) async {
     touch();

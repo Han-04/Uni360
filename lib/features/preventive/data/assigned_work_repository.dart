@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/utils/photo_upload.dart';
+import 'campus_position.dart';
+
 typedef AssignedWorkLoader = Future<List<AssignedWork>> Function(
   String workerId,
   DateTime? date,
@@ -30,6 +33,7 @@ class AssignedWork {
     this.photoPaths = const [],
     this.notes = '',
     this.feedback = '',
+    this.locationVerifiedAt,
   });
 
   final String id, title, instructions;
@@ -39,6 +43,10 @@ class AssignedWork {
   final Set<int> checkedItems;
   final List<String> photoPaths;
   final String notes, feedback;
+  final DateTime? locationVerifiedAt;
+
+  bool get hasCameraPhoto =>
+      photoPaths.any((path) => path.split('/').last.startsWith('camera-'));
 }
 
 enum AssignedWorkStatus {
@@ -55,8 +63,14 @@ abstract interface class AssignedWorkActions {
   Future<AssignedWork> loadOrder(String workerId, String orderId);
   Future<void> start(String orderId);
   Future<void> checkItem(String orderId, int index, bool checked);
-  Future<void> attachPhoto(String workerId, String orderId, Uint8List bytes);
-  Future<void> submit(String orderId, String notes);
+  Future<void> verifyLocation(String orderId, CampusPosition position);
+  Future<void> attachPhoto(
+    String workerId,
+    String orderId,
+    Uint8List bytes,
+    CampusPosition position,
+  );
+  Future<void> submit(String orderId, String notes, CampusPosition position);
   Future<String> photoUrl(String path);
 }
 
@@ -64,7 +78,7 @@ class AssignedWorkRepository implements AssignedWorkActions {
   const AssignedWorkRepository(this._client);
   final SupabaseClient _client;
   static const _fields = '''
-    id,title,instructions,checklist,scheduled_for,due_at,status,checked_items,worker_notes,review_note,
+    id,title,instructions,checklist,scheduled_for,due_at,status,checked_items,worker_notes,review_note,location_verified_at,
     preventive_work_order_target(facility_path),preventive_work_evidence(path)
   ''';
   static const maxPhotoBytes = 10485760;
@@ -145,6 +159,9 @@ class AssignedWorkRepository implements AssignedWorkActions {
           .toList(),
       notes: row['worker_notes'] as String,
       feedback: row['review_note'] as String,
+      locationVerifiedAt: row['location_verified_at'] == null
+          ? null
+          : DateTime.parse(row['location_verified_at'] as String),
     );
   }
 
@@ -157,10 +174,7 @@ class AssignedWorkRepository implements AssignedWorkActions {
       'worker_work_order_action',
       params: {'target_order': orderId, 'action': action, ...fields},
     );
-    final expected = action == 'submit'
-        ? AssignedWorkStatus.submitted
-        : AssignedWorkStatus.inProgress;
-    if (status != expected.value) {
+    if (status != AssignedWorkStatus.inProgress.value) {
       throw StateError('The work order changed. Refresh it and try again.');
     }
   }
@@ -173,8 +187,37 @@ class AssignedWorkRepository implements AssignedWorkActions {
       _action(orderId, 'check', {'item_index': index, 'item_checked': checked});
 
   @override
-  Future<void> submit(String orderId, String notes) =>
-      _action(orderId, 'submit', {'notes': notes});
+  Future<void> verifyLocation(String orderId, CampusPosition position) =>
+      _campusAction(orderId, 'verify', position);
+
+  @override
+  Future<void> submit(String orderId, String notes, CampusPosition position) =>
+      _campusAction(orderId, 'submit', position, notes: notes);
+
+  Future<void> _campusAction(
+    String orderId,
+    String action,
+    CampusPosition position, {
+    String? photo,
+    String? notes,
+  }) async {
+    final status = await _client.rpc<String>(
+      'preventive_campus_action',
+      params: {
+        'target_order': orderId,
+        'action': action,
+        ...position.toParams(),
+        'photo': photo,
+        'notes': notes,
+      },
+    );
+    final expected = action == 'submit'
+        ? AssignedWorkStatus.submitted
+        : AssignedWorkStatus.inProgress;
+    if (status != expected.value) {
+      throw StateError('The work order changed. Refresh and try again.');
+    }
+  }
 
   @override
   Future<String> photoUrl(String path) =>
@@ -185,18 +228,19 @@ class AssignedWorkRepository implements AssignedWorkActions {
     String workerId,
     String orderId,
     Uint8List bytes,
+    CampusPosition position,
   ) async {
     _requireWorker(workerId);
     if (bytes.isEmpty || bytes.length > maxPhotoBytes) {
-      throw const FormatException('Choose a photo under 10 MB.');
+      throw const FormatException('Take a new photo under 10 MB.');
     }
-    final (extension, mime) = _photoType(bytes);
+    final (extension, mime) = photoUploadType(bytes);
     final random = Random.secure();
     final key = List.generate(
       16,
       (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ).join();
-    final path = '$workerId/$orderId/$key.$extension';
+    final path = '$workerId/$orderId/camera-$key.$extension';
     final storage = _client.storage.from(_bucket);
     await storage.uploadBinary(
       path,
@@ -205,7 +249,7 @@ class AssignedWorkRepository implements AssignedWorkActions {
     );
     try {
       _requireWorker(workerId);
-      await _action(orderId, 'attach', {'evidence_path': path});
+      await _campusAction(orderId, 'camera', position, photo: path);
     } catch (_) {
       try {
         await storage.remove([path]);
@@ -214,20 +258,5 @@ class AssignedWorkRepository implements AssignedWorkActions {
       }
       rethrow;
     }
-  }
-
-  (String, String) _photoType(Uint8List bytes) {
-    bool matches(int offset, List<int> signature) =>
-        bytes.length >= offset + signature.length &&
-        Iterable<int>.generate(signature.length)
-            .every((i) => bytes[offset + i] == signature[i]);
-    if (matches(0, [255, 216, 255])) return ('jpg', 'image/jpeg');
-    if (matches(0, [137, 80, 78, 71, 13, 10, 26, 10])) {
-      return ('png', 'image/png');
-    }
-    if (matches(0, 'RIFF'.codeUnits) && matches(8, 'WEBP'.codeUnits)) {
-      return ('webp', 'image/webp');
-    }
-    throw const FormatException('Choose a JPG, PNG or WebP photo.');
   }
 }

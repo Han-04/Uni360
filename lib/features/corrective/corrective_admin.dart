@@ -863,7 +863,6 @@ class _AdminIncidentState extends State<_AdminIncident> {
                 [
                   worker['job_role']?.toString() ?? 'Qualified by skill',
                   if (index == 0) 'Recommended',
-                  if (worker['same_zone'] == true) 'Same zone',
                   if (worker['standby'] == true) 'Standby',
                   'Workload ${worker['workload']}',
                 ].join(' · '),

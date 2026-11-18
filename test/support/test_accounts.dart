@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:uni360/shared/account/account.dart';
 import 'package:uni360/shared/account/account_repository.dart';
 
@@ -35,10 +37,14 @@ class TestAccounts implements AccountRepository {
   Future<Account> updateContact(
     Account account,
     String name,
-    String phone,
-  ) async {
+    String phone, {
+    Uint8List? photo,
+  }) async {
     return profile = profile.withContact(name: name, phone: phone);
   }
+
+  @override
+  Future<String?> photoUrl(Account account) async => null;
 
   @override
   Future<void> changePassword(String current, String next) async {

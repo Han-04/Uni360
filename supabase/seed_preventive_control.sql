@@ -1,4 +1,4 @@
--- Demo data. Run after the preventive control migration and demo account setup.
+-- Demo data. Run after all migrations and demo account setup.
 begin;
 
 insert into public.preventive_zone (id, name) values
@@ -26,13 +26,20 @@ begin
 end;
 $$;
 
-insert into public.preventive_facility (id, zone_id, parent_id, name, facility_type, metadata) values
-  ('36000000-0000-4000-8000-000000000011', '36000000-0000-4000-8000-000000000001', null, 'Block K', 'building', '{"floors": 3}'),
-  ('36000000-0000-4000-8000-000000000012', '36000000-0000-4000-8000-000000000001', '36000000-0000-4000-8000-000000000011', 'Ground Floor', 'floor', '{}'),
-  ('36000000-0000-4000-8000-000000000013', '36000000-0000-4000-8000-000000000001', '36000000-0000-4000-8000-000000000012', 'Ground Floor Toilet', 'room', '{"fixtures": 6}'),
-  ('36000000-0000-4000-8000-000000000014', '36000000-0000-4000-8000-000000000001', '36000000-0000-4000-8000-000000000012', 'Gym Room', 'room', '{}'),
-  ('36000000-0000-4000-8000-000000000015', '36000000-0000-4000-8000-000000000001', null, 'Block K Garden', 'outdoor_area', '{}'),
-  ('36000000-0000-4000-8000-000000000016', '36000000-0000-4000-8000-000000000002', null, 'Hostel Courtyard', 'outdoor_area', '{}')
+insert into uni360_private.facility_access_scope (facility_id, zone_id)
+select ('36000000-0000-4000-8000-0000000000' || n)::uuid,
+  case when n = 16 then '36000000-0000-4000-8000-000000000002'::uuid
+    else '36000000-0000-4000-8000-000000000001'::uuid end
+from generate_series(11, 16) as facility(n)
+on conflict (facility_id) do nothing;
+
+insert into public.preventive_facility (id, parent_id, name, facility_type, metadata) values
+  ('36000000-0000-4000-8000-000000000011', null, 'Block K', 'building', '{"floors": 3}'),
+  ('36000000-0000-4000-8000-000000000012', '36000000-0000-4000-8000-000000000011', 'Ground Floor', 'floor', '{}'),
+  ('36000000-0000-4000-8000-000000000013', '36000000-0000-4000-8000-000000000012', 'Ground Floor Toilet', 'room', '{"fixtures": 6, "room_type": "toilet"}'),
+  ('36000000-0000-4000-8000-000000000014', '36000000-0000-4000-8000-000000000012', 'Gym Room', 'room', '{}'),
+  ('36000000-0000-4000-8000-000000000015', null, 'Block K Garden', 'outdoor_area', '{}'),
+  ('36000000-0000-4000-8000-000000000016', null, 'Hostel Courtyard', 'outdoor_area', '{}')
 on conflict (id) do nothing;
 
 insert into maintenance_api.preventive_task_definition
