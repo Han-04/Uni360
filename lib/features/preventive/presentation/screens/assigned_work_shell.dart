@@ -14,6 +14,8 @@ import '../../data/assigned_work_repository.dart';
 import '../../data/preventive_alert_repository.dart';
 import '../../../workforce/worker_profile_repository.dart';
 import 'assigned_work_details.dart';
+import 'notification_details.dart';
+import 'work_calendar.dart';
 
 class AssignedWorkShell extends StatefulWidget {
   const AssignedWorkShell({
@@ -50,6 +52,8 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
   bool _alertsLoading = false, _alertsError = false;
   int _alertRequest = 0;
   Timer? _alertTimer;
+  Timer? _dayRefresh;
+  DateTime _today = malaysiaToday();
   DateTime? get _date => _tab == 0 ? malaysiaToday() : _selected;
 
   @override
@@ -57,6 +61,16 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _orders = widget.load(widget.workerId, _date);
+    _dayRefresh = Timer.periodic(const Duration(minutes: 1), (_) {
+      final today = malaysiaToday();
+      if (today == _today) return;
+      _today = today;
+      if (_tab == 0) {
+        unawaited(_reload());
+      } else {
+        setState(() {});
+      }
+    });
     if (widget.alerts != null) {
       _reloadAlerts();
       _alertTimer = Timer.periodic(
@@ -70,6 +84,7 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _alertTimer?.cancel();
+    _dayRefresh?.cancel();
     super.dispose();
   }
 
@@ -133,9 +148,26 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
       if (mounted) await _reloadAlerts();
     } on Exception {
       if (mounted) {
-        showMessage(context, 'Could not mark this alert as read. Try again.');
+        showMessage(
+          context,
+          'Could not mark this notification as read. Try again.',
+        );
       }
     }
+  }
+
+  Future<void> _openNotification(PreventiveAlert alert) async {
+    widget.accounts.touch();
+    final route = Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Theme(
+          data: buildWorkerTheme(Theme.of(context)),
+          child: NotificationDetails(notification: alert),
+        ),
+      ),
+    );
+    if (!alert.read) unawaited(_read(alert));
+    await route;
   }
 
   Widget _notifications(BuildContext context) {
@@ -197,15 +229,10 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
 
   Widget _notificationCard(PreventiveAlert alert) {
     final sender = alert.senderName ?? 'Uni360';
-    final initials = sender
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .take(2)
-        .map((part) => part.characters.first.toUpperCase())
-        .join();
-    final photo = alert.senderPhotoUrl;
     final date = malaysiaTime(alert.createdAt);
+    final textStyle = TextStyle(
+      fontWeight: alert.read ? FontWeight.w400 : FontWeight.w700,
+    );
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -213,7 +240,7 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: alert.read ? null : () => _read(alert),
+        onTap: () => _openNotification(alert),
         child: Semantics(
           label: alert.read ? null : 'Unread notification',
           child: Padding(
@@ -221,17 +248,7 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: WorkerColors.tint,
-                  foregroundColor: WorkerColors.deepBlue,
-                  foregroundImage: photo == null ? null : NetworkImage(photo),
-                  onForegroundImageError: photo == null ? null : (_, _) {},
-                  child: Text(
-                    initials,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
+                NotificationAvatar(notification: alert),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -244,15 +261,13 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
                               sender,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
+                              style: textStyle,
                             ),
                           ),
                           const SizedBox(width: 6),
                           Text(
                             dateLabel(date),
-                            style: const TextStyle(
+                            style: textStyle.copyWith(
                               color: AppColors.muted,
                               fontSize: 11,
                             ),
@@ -268,11 +283,8 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        alert.title,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(alert.message),
+                      Text(alert.title, style: textStyle),
+                      Text(alert.message, style: textStyle),
                     ],
                   ),
                 ),
@@ -295,12 +307,12 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
   }
 
   Future<void> _chooseDate() async {
-    final date = await showDatePicker(
+    final calendarOrders = _selected == null
+        ? _orders
+        : widget.load(widget.workerId, null);
+    final date = await showDialog<DateTime>(
       context: context,
-      initialDate: _selected ?? malaysiaToday(),
-      currentDate: malaysiaToday(),
-      firstDate: DateTime(1),
-      lastDate: DateTime(9999, 12, 31),
+      builder: (_) => WorkCalendar(selected: _selected, orders: calendarOrders),
     );
     if (mounted && date != null) _selectDate(date);
   }
@@ -661,8 +673,13 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
   }
 
   Widget _taskCard(AssignedWork order) {
-    final (ink, background) = switch (order.status) {
+    final status = order.displayStatus;
+    final (ink, background) = switch (status) {
       AssignedWorkStatus.assigned => (WorkerColors.deepBlue, WorkerColors.tint),
+      AssignedWorkStatus.overdue => (
+        const Color(0xFF9C2525),
+        const Color(0xFFFFE4E4),
+      ),
       AssignedWorkStatus.inProgress => (
         const Color(0xFF825000),
         const Color(0xFFFFEECF),
@@ -723,7 +740,7 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
                           vertical: 4,
                         ),
                         child: Text(
-                          order.status.label,
+                          status.label,
                           style: TextStyle(
                             color: ink,
                             fontSize: 11,
@@ -810,35 +827,50 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
             ] else ...[
               Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Previous day',
-                    onPressed: () => _moveDate(-1),
-                    icon: const Icon(Icons.chevron_left),
-                  ),
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _chooseDate,
                       icon: const Icon(Icons.calendar_today_outlined, size: 17),
                       label: Text(
                         _selected == null ? 'All dates' : dateLabel(_selected!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Today'),
+                    selected: _selected == malaysiaToday(),
+                    onSelected: (_) => _selectDate(malaysiaToday()),
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: 'Show all dates',
+                    child: ChoiceChip(
+                      label: const Text('All'),
+                      selected: _selected == null,
+                      onSelected: (_) => _selectDate(null),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous day',
+                    onPressed: () => _moveDate(-1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Expanded(child: _dateStrip(context)),
                   IconButton(
                     tooltip: 'Next day',
                     onPressed: () => _moveDate(1),
                     icon: const Icon(Icons.chevron_right),
                   ),
-                  if (_selected != null)
-                    IconButton(
-                      tooltip: 'Show all dates',
-                      onPressed: () => _selectDate(null),
-                      icon: const Icon(Icons.close),
-                    ),
                 ],
               ),
-              const SizedBox(height: 8),
-              _dateStrip(context),
               SectionHeading(
                 _selected == null ? 'Schedule' : dateLabel(_selected!),
               ),
@@ -860,6 +892,13 @@ class _AssignedWorkShellState extends State<AssignedWorkShell>
             else if (orders.isEmpty)
               EmptyState(
                 title: 'No assigned tasks',
+                illustration: const Image(
+                  image: AssetImage('assets/tasks/empty-tasks.png'),
+                  width: 126,
+                  height: 112,
+                  fit: BoxFit.contain,
+                  excludeFromSemantics: true,
+                ),
                 message: _date == null
                     ? 'Approved work orders will appear here.'
                     : 'There are no approved assignments for this date.',

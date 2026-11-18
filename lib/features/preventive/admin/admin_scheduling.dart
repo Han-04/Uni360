@@ -627,27 +627,25 @@ class _ScheduledTasksState extends State<_ScheduledTasks> {
     final plan = widget.template != null || widget.facilities != null
         ? ',preventive_task_plan!inner(zone_id)'
         : '';
-    var query = widget.data
-        .table('preventive_work_order')
-        .select('$orderFields$plan')
-        .isFilter('cancelled_at', null)
-        .gte('scheduled_for', midnight(widget.first));
-    if (widget.last case final last?) {
-      query = query.lt(
-        'scheduled_for',
-        midnight(last.add(const Duration(days: 1))),
-      );
-    }
-    if (widget.template case final template?) {
-      query = query.eq('preventive_task_plan.task_definition_id', template);
-    }
-    if (widget.facilities case final ids?) {
-      query = query.inFilter('preventive_task_plan.facility_id', ids);
-    }
-    final rows = await query
-        .order('scheduled_for', ascending: true)
-        .order('id')
-        .range(page * 20, (page + 1) * 20);
+    final rows = await widget.data.withCatalogWorkOrders((orders) async {
+      var query = orders.gte('scheduled_for', midnight(widget.first));
+      if (widget.last case final last?) {
+        query = query.lt(
+          'scheduled_for',
+          midnight(last.add(const Duration(days: 1))),
+        );
+      }
+      if (widget.template case final template?) {
+        query = query.eq('preventive_task_plan.task_definition_id', template);
+      }
+      if (widget.facilities case final ids?) {
+        query = query.inFilter('preventive_task_plan.facility_id', ids);
+      }
+      return query
+          .order('scheduled_for', ascending: true)
+          .order('id')
+          .range(page * 20, (page + 1) * 20);
+    }, fields: '$orderFields$plan');
     if (rows.isNotEmpty && workers.isEmpty) {
       workers = await widget.data.workerDirectory();
     }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
@@ -14,17 +15,29 @@ abstract final class WorkerColors {
   static const tint = Color(0xFFE7EEFF);
 }
 
-ThemeData buildWorkerTheme(ThemeData base) => base.copyWith(
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: WorkerColors.blue,
-    primary: WorkerColors.blue,
-    surface: Colors.white,
-  ),
-  scaffoldBackgroundColor: WorkerColors.background,
-  appBarTheme: base.appBarTheme.copyWith(
-    backgroundColor: WorkerColors.background,
-  ),
-);
+ThemeData buildPreventiveTheme(ThemeData base) {
+  // Flutter web renders bundled fonts. Native Windows can use its system font.
+  final family = !kIsWeb && base.platform == TargetPlatform.windows
+      ? 'Segoe UI'
+      : 'Selawik';
+  return base.copyWith(
+    textTheme: base.textTheme.apply(fontFamily: family),
+    primaryTextTheme: base.primaryTextTheme.apply(fontFamily: family),
+  );
+}
+
+ThemeData buildWorkerTheme(ThemeData base) =>
+    buildPreventiveTheme(base).copyWith(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: WorkerColors.blue,
+        primary: WorkerColors.blue,
+        surface: Colors.white,
+      ),
+      scaffoldBackgroundColor: WorkerColors.background,
+      appBarTheme: base.appBarTheme.copyWith(
+        backgroundColor: WorkerColors.background,
+      ),
+    );
 
 ThemeData buildAppTheme() {
   final scheme = ColorScheme.fromSeed(

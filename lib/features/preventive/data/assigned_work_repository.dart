@@ -45,6 +45,15 @@ class AssignedWork {
   final String notes, feedback;
   final DateTime? locationVerifiedAt;
 
+  AssignedWorkStatus get displayStatus {
+    final day = DateTime(starts.year, starts.month, starts.day);
+    return (status == AssignedWorkStatus.assigned ||
+                status == AssignedWorkStatus.inProgress) &&
+            day.isBefore(malaysiaToday())
+        ? AssignedWorkStatus.overdue
+        : status;
+  }
+
   bool get hasCameraPhoto =>
       photoPaths.any((path) => path.split('/').last.startsWith('camera-'));
 }
@@ -52,6 +61,7 @@ class AssignedWork {
 enum AssignedWorkStatus {
   assigned('assigned', 'Assigned'),
   inProgress('in_progress', 'In progress'),
+  overdue('overdue', 'Overdue'),
   submitted('submitted', 'Awaiting approval'),
   completed('completed', 'Completed');
 

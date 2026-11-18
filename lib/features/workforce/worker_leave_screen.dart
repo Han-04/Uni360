@@ -1,15 +1,22 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-
-import '../../core/widgets/curved_back_button.dart';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/curved_back_button.dart';
+import '../../core/widgets/worker_calendar_dialog.dart';
 import '../preventive/data/assigned_work_repository.dart' show malaysiaToday;
 import 'leave_document_button.dart';
 import 'worker_leave_repository.dart';
+
+String _leaveDuration(DateTime first, DateTime last) {
+  final startDay = DateTime.utc(first.year, first.month, first.day);
+  final endDay = DateTime.utc(last.year, last.month, last.day);
+  final days = endDay.difference(startDay).inDays + 1;
+  return '$days ${days == 1 ? "day" : "days"}';
+}
 
 class WorkerLeaveEntry extends StatelessWidget {
   const WorkerLeaveEntry({
@@ -20,39 +27,68 @@ class WorkerLeaveEntry extends StatelessWidget {
   final String workerId;
   final WorkerLeaveRepository repository;
 
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const SectionHeading('Leave'),
-      OutlinedButton.icon(
-        onPressed: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) =>
-                WorkerLeaveScreen(workerId: workerId, repository: repository),
-          ),
+  Future<void> _apply(BuildContext context) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => Theme(
+          data: buildWorkerTheme(Theme.of(context)),
+          child: _LeaveForm(repository: repository),
         ),
-        icon: const Icon(Icons.event_busy_outlined),
-        label: const Text('Apply for leave'),
       ),
-    ],
+    );
+    if (saved == true && context.mounted) {
+      showMessage(context, 'Leave request submitted.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 14),
+    child: SurfaceCard(
+      padding: const EdgeInsets.all(6),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(
+              Icons.event_busy_outlined,
+              color: WorkerColors.blue,
+            ),
+            title: const Text('Apply for leave'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _apply(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history, color: WorkerColors.blue),
+            title: const Text('Leave history'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (context) => Theme(
+                  data: buildWorkerTheme(Theme.of(context)),
+                  child: _LeaveHistory(
+                    workerId: workerId,
+                    repository: repository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
   );
 }
 
-class WorkerLeaveScreen extends StatefulWidget {
-  const WorkerLeaveScreen({
-    super.key,
-    required this.workerId,
-    required this.repository,
-  });
+class _LeaveHistory extends StatefulWidget {
+  const _LeaveHistory({required this.workerId, required this.repository});
   final String workerId;
   final WorkerLeaveRepository repository;
 
   @override
-  State<WorkerLeaveScreen> createState() => _WorkerLeaveScreenState();
+  State<_LeaveHistory> createState() => _LeaveHistoryState();
 }
 
-class _WorkerLeaveScreenState extends State<WorkerLeaveScreen> {
+class _LeaveHistoryState extends State<_LeaveHistory> {
   int page = 0;
   late Future<List<WorkerLeave>> _requests = _load();
 
@@ -71,24 +107,11 @@ class _WorkerLeaveScreenState extends State<WorkerLeaveScreen> {
     }
   }
 
-  Future<void> _apply() async {
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => _LeaveForm(repository: widget.repository),
-      ),
-    );
-    if (saved == true && mounted) {
-      page = 0;
-      _refresh();
-      showMessage(context, 'Leave request submitted.');
-    }
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       leading: CurvedBackButton.forRoute(context),
-      title: const Text('Leave requests'),
+      title: const Text('Leave history'),
       actions: [
         IconButton(
           onPressed: _refresh,
@@ -108,12 +131,6 @@ class _WorkerLeaveScreenState extends State<WorkerLeaveScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
-                FilledButton.icon(
-                  onPressed: _apply,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Apply for leave'),
-                ),
-                const SectionHeading('My requests'),
                 if (snapshot.connectionState != ConnectionState.done)
                   const LinearProgressIndicator()
                 else if (snapshot.hasError)
@@ -142,7 +159,9 @@ class _WorkerLeaveScreenState extends State<WorkerLeaveScreen> {
                                   ? dateLabel(leave.first)
                                   : '${dateLabel(leave.first)} – ${dateLabel(leave.last)}',
                             ),
-                            Text(leave.statusOn(malaysiaToday())),
+                            Text(_leaveDuration(leave.first, leave.last)),
+                            const SizedBox(height: 6),
+                            _LeaveStatus(leave: leave),
                             const SizedBox(height: 8),
                             Text(leave.reason),
                             LeaveDocumentButton(
@@ -188,6 +207,34 @@ class _WorkerLeaveScreenState extends State<WorkerLeaveScreen> {
   );
 }
 
+class _LeaveStatus extends StatelessWidget {
+  const _LeaveStatus({required this.leave});
+
+  final WorkerLeave leave;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = switch (leave.status) {
+      'approved' => (const Color(0xFFDDF6E9), const Color(0xFF146345)),
+      'rejected' => (const Color(0xFFFFE4E4), const Color(0xFF9C2525)),
+      _ => (const Color(0xFFFFEECF), const Color(0xFF825000)),
+    };
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: background,
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          leave.statusOn(malaysiaToday()),
+          style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
 class _LeaveForm extends StatefulWidget {
   const _LeaveForm({required this.repository});
   final WorkerLeaveRepository repository;
@@ -205,6 +252,13 @@ class _LeaveFormState extends State<_LeaveForm> {
   bool _picking = false;
   bool _saving = false;
 
+  String? get _selectedDuration {
+    final first = _first;
+    final last = _last;
+    if (first == null || last == null) return null;
+    return _leaveDuration(first, last);
+  }
+
   @override
   void dispose() {
     _reason.dispose();
@@ -214,13 +268,21 @@ class _LeaveFormState extends State<_LeaveForm> {
   Future<void> _pick(bool start) async {
     final now = malaysiaToday();
     final minimum = start ? now : _first ?? now;
-    final date = await showDatePicker(
+    final maximum = start
+        ? DateTime(now.year + 1, now.month, now.day)
+        : minimum.add(const Duration(days: 365));
+    final current = (start ? _first : _last) ?? minimum;
+    final date = await showDialog<DateTime>(
       context: context,
-      firstDate: minimum,
-      initialDate: (start ? _first : _last) ?? minimum,
-      lastDate: start
-          ? DateTime(now.year + 1, now.month, now.day)
-          : minimum.add(const Duration(days: 365)),
+      builder: (_) => WorkerCalendarDialog(
+        title: start ? 'Select start date' : 'Select end date',
+        today: now,
+        selected: current.isBefore(minimum) || current.isAfter(maximum)
+            ? minimum
+            : current,
+        firstDate: minimum,
+        lastDate: maximum,
+      ),
     );
     if (date == null || !mounted) return;
     setState(() {
@@ -373,6 +435,16 @@ class _LeaveFormState extends State<_LeaveForm> {
                   _last == null ? 'End date' : 'Ends · ${dateLabel(_last!)}',
                 ),
               ),
+              if (_selectedDuration case final duration?) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Note: You are applying for $duration of leave.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: WorkerColors.deepBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _reason,

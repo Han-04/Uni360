@@ -190,19 +190,28 @@ class AccountProfileScreen extends StatelessWidget {
           child: Column(
             children: [
               ListTile(
-                leading: const Icon(Icons.badge_outlined),
+                leading: const Icon(
+                  Icons.badge_outlined,
+                  color: WorkerColors.blue,
+                ),
                 title: const Text('Employee ID'),
                 subtitle: Text(profile.employeeId),
               ),
               ListTile(
-                leading: const Icon(Icons.phone_outlined),
+                leading: const Icon(
+                  Icons.phone_outlined,
+                  color: WorkerColors.blue,
+                ),
                 title: const Text('Phone number'),
                 subtitle: Text(
                   profile.phone.isEmpty ? 'Not added' : profile.phone,
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.work_outline),
+                leading: const Icon(
+                  Icons.work_outline,
+                  color: WorkerColors.blue,
+                ),
                 title: const Text('Job role'),
                 subtitle: Text(jobRole),
               ),
@@ -226,17 +235,20 @@ class AccountProfileScreen extends StatelessWidget {
         child: Column(
           children: [
             ListTile(
-              leading: const Icon(Icons.lock_outline),
+              leading: const Icon(Icons.lock_outline, color: WorkerColors.blue),
               title: const Text('Change password'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => _PasswordScreen(controller: controller),
+                  builder: (_) => InheritedTheme.captureAll(
+                    context,
+                    _PasswordScreen(controller: controller),
+                  ),
                 ),
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.logout),
+              leading: const Icon(Icons.logout, color: WorkerColors.blue),
               title: const Text('Sign out'),
               trailing: const Icon(Icons.chevron_right),
               onTap: controller.signOut,

@@ -91,34 +91,90 @@ class AdminData {
   Future<List<AdminRow>> facilities() =>
       all(table('preventive_facility').select(facilityFields), 'name', 'id');
 
+  Future<void> saveFacility(AdminRow values, {String? id}) {
+    final facilities = table('preventive_facility');
+    return write(
+      id == null
+          ? facilities.insert(values)
+          : facilities.update(values).eq('id', id),
+    );
+  }
+
   Future<List<AdminRow>> zones() =>
       all(table('preventive_zone').select('id,name'), 'name', 'id');
 
-  Future<List<String>> scheduledTaskNames() async {
-    final orders = await all(
-      table('preventive_work_order')
-          .select('id,title')
-          .isFilter('cancelled_at', null),
-      'title',
+  Future<T> withCatalogWorkOrders<T>(
+    Future<T> Function(PostgrestFilterBuilder<PostgrestList> query) read, {
+    String fields = orderFields,
+  }) async {
+    final retired = await all(
+      table('preventive_facility')
+          .select('id')
+          .or(
+            'metadata->catalog_removed.eq.true,metadata->arena_replaced.eq.true',
+          ),
       'id',
+      'id',
+    );
+    final orders = table('preventive_work_order');
+    if (retired.isEmpty) {
+      return read(orders.select(fields).isFilter('cancelled_at', null));
+    }
+    final retiredIds = retired.map((row) => row['id'] as String).toList();
+    // Keep mixed-location orders at their remaining locations, and preserve
+    // orders that originally had no location.
+    return read(
+      orders
+          .select('$fields,has_targets:preventive_work_order_target()')
+          .isFilter('cancelled_at', null)
+          .not('preventive_work_order_target.facility_id', 'in', retiredIds)
+          .or('has_targets.is.null,preventive_work_order_target.not.is.null'),
+    );
+  }
+
+  PostgrestFilterBuilder<PostgrestList> _overdue(
+    PostgrestFilterBuilder<PostgrestList> query,
+  ) => query
+      .inFilter('status', ['assigned', 'in_progress'])
+      .not('worker_id', 'is', null)
+      .lt('scheduled_for', midnight(adminToday()));
+
+  Future<int> overdueCount() => withCatalogWorkOrders(
+    (query) async => (await _overdue(query).limit(1).count()).count,
+    fields: 'id,preventive_work_order_target()',
+  );
+
+  Future<List<AdminRow>> overdueOrders(int page) => withCatalogWorkOrders(
+    (query) async =>
+        _overdue(query)
+            .order('scheduled_for', ascending: false)
+            .order('id')
+            .range(page * 25, (page + 1) * 25),
+  );
+
+  Future<List<String>> scheduledTaskNames() async {
+    final orders = await withCatalogWorkOrders(
+      (query) => all(query, 'title', 'id'),
+      fields: 'id,title,preventive_work_order_target()',
     );
     return orders.map((order) => order['title'] as String).toSet().toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
-  Future<List<AdminRow>> scheduledTasksOn(String title, DateTime date) => all(
-    table('preventive_work_order')
-        .select(orderFields)
-        .eq('title', title)
-        .isFilter('cancelled_at', null)
-        .gte('scheduled_for', midnight(date))
-        .lt(
+  Future<List<AdminRow>> scheduledTasksOn(String title, DateTime date) =>
+      withCatalogWorkOrders(
+        (query) => all(
+          query
+              .eq('title', title)
+              .gte('scheduled_for', midnight(date))
+              .lt(
+                'scheduled_for',
+                midnight(DateTime.utc(date.year, date.month, date.day + 1)),
+              ),
           'scheduled_for',
-          midnight(DateTime.utc(date.year, date.month, date.day + 1)),
+          'id',
         ),
-    'scheduled_for',
-    'id',
-  );
+      );
 
   Future<List<AdminRow>> workers([String search = '', int page = 0]) async =>
       adminRows(
@@ -152,6 +208,10 @@ String orderLocation(AdminRow row) =>
         .join(', ');
 
 String orderStatus(AdminRow row) => switch (row['status']) {
+  'assigned' || 'in_progress'
+      when row['worker_id'] != null &&
+          adminDay(row['scheduled_for']).isBefore(adminToday()) =>
+    'Overdue',
   'in_progress' => 'In progress',
   'submitted' => 'Awaiting approval',
   'completed' => 'Completed',

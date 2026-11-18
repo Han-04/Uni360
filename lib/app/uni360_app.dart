@@ -132,16 +132,22 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
       routes: {
         adminPortalRoute: (context) {
           final data = widget.administration;
-          if (data == null) {
-            return Scaffold(
-              appBar: AppBar(title: const Text('Uni360 Administration')),
-              body: const Center(
-                child: Text(
-                  'Open Uni360 in a desktop browser to manage accounts.',
-                ),
-              ),
-            );
-          }
+          return Theme(
+            data: buildPreventiveTheme(Theme.of(context)),
+            child: data == null
+                ? Scaffold(
+                    appBar: AppBar(title: const Text('Uni360 Administration')),
+                    body: const Center(
+                      child: Text(
+                        'Open Uni360 in a desktop browser to manage accounts.',
+                      ),
+                    ),
+                  )
+                : AdminDashboard(accounts: _accounts, data: data),
+          );
+        },
+        correctiveAdminRoute: (context) {
+          final account = _accounts.account;
           final repository = widget.corrective;
           return AdminDashboard(
             accounts: _accounts,
