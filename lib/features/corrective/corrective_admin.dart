@@ -6,8 +6,6 @@ import 'package:qr/qr.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../shared/account/account.dart';
-import '../../shared/account/presentation/admin_portal_button.dart';
 import 'corrective_analytics.dart';
 import 'corrective_case_pdf.dart';
 import 'corrective_categories_screen.dart';
@@ -16,16 +14,16 @@ import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 import 'incident_report_screen.dart';
 
-const correctiveAdminRoute = '/corrective';
-
 class CorrectiveAdmin extends StatefulWidget {
   const CorrectiveAdmin({
     super.key,
     required this.repository,
-    required this.account,
+    required this.administratorId,
+    this.onReturnToPortal,
   });
   final CorrectiveRepository repository;
-  final Account account;
+  final String administratorId;
+  final VoidCallback? onReturnToPortal;
 
   @override
   State<CorrectiveAdmin> createState() => _CorrectiveAdminState();
@@ -61,7 +59,7 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   }
 
   Future<List<CorrectiveIncident>> _request() =>
-      widget.repository.list(widget.account.id, admin: true);
+      widget.repository.list(widget.administratorId, admin: true);
 
   void _refresh() {
     if (!mounted) return;
@@ -81,15 +79,15 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   }
 
   Future<void> _report() async {
-    final id = await Navigator.of(context).push(
-      MaterialPageRoute<String>(
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute<IncidentReportResult>(
         builder: (_) =>
             IncidentReportScreen(widget.repository, administrator: true),
       ),
     );
-    if (!mounted || id == null) return;
+    if (!mounted || result == null) return;
     _refresh();
-    _open(id);
+    if (result.openDetails) _open(result.id);
   }
 
   void _open(String id) {
@@ -141,6 +139,9 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: widget.onReturnToPortal == null
+          ? null
+          : BackButton(onPressed: widget.onReturnToPortal),
       title: const Text('Corrective Maintenance'),
       actions: [
         IconButton(
@@ -321,10 +322,9 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
                       icon: const Icon(Icons.bar_chart),
                       label: const Text('Analytics and summary PDF'),
                     ),
-                  if (kIsWeb)
+                  if (widget.onReturnToPortal != null)
                     TextButton.icon(
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed(adminPortalRoute),
+                      onPressed: widget.onReturnToPortal,
                       icon: const Icon(Icons.manage_accounts_outlined),
                       label: const Text(
                         'Manage shared facilities and accounts',

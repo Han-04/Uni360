@@ -1,13 +1,18 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uni360/app/uni360_app.dart';
+import 'package:uni360/core/theme/app_theme.dart';
+import 'package:uni360/core/widgets/phone_viewport.dart';
+import 'package:uni360/features/corrective/corrective_admin.dart';
 import 'package:uni360/features/corrective/corrective_case_pdf.dart';
 import 'package:uni360/features/corrective/corrective_photo_diagnostics.dart';
 import 'package:uni360/features/corrective/corrective_repository.dart';
 import 'package:uni360/shared/account/account.dart';
+import 'package:uni360/shared/account/presentation/admin_portal_view.dart';
 
 import 'support/test_accounts.dart';
 
@@ -129,9 +134,10 @@ class _CorrectiveFixture extends CorrectiveRepository {
 Future<void> _signIn(
   WidgetTester tester,
   TestAccounts accounts,
-  _CorrectiveFixture corrective,
-) async {
-  tester.view.physicalSize = const Size(390, 844);
+  _CorrectiveFixture corrective, {
+  double width = 390,
+}) async {
+  tester.view.physicalSize = Size(width, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -151,6 +157,26 @@ Future<void> _signIn(
     TestAccounts.password,
   );
   await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openAdminQueue(
+  WidgetTester tester,
+  _CorrectiveFixture repository,
+) async {
+  tester.view.physicalSize = const Size(790, 844);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: buildAppTheme(),
+      home: CorrectiveAdmin(
+        repository: repository,
+        administratorId: repository.actor,
+      ),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -201,7 +227,11 @@ void main() {
         accounts.profile.id,
         status: 'reported',
       );
-      await _signIn(tester, accounts, repository);
+      await _signIn(tester, accounts, repository, width: 1280);
+      expect(
+        tester.getSize(find.byType(SafeArea).first).width,
+        PhoneViewport.maxWidth,
+      );
       expect(find.text('Preventive Maintenance'), findsNothing);
       await _tapVisible(tester, find.text('Corrective Maintenance'));
       expect(find.text('My reports'), findsOneWidget);
@@ -212,6 +242,36 @@ void main() {
     },
   );
 
+  testWidgets('Admin login opens the dedicated portal from mobile sign-in', (
+    tester,
+  ) async {
+    final accounts = TestAccounts(role: AccountRole.administrator);
+    final repository = _CorrectiveFixture(
+      accounts.profile.id,
+      status: 'reported',
+    );
+    await _signIn(tester, accounts, repository, width: 1280);
+    expect(find.text('Use Admin login on the Uni360 website.'), findsOneWidget);
+    expect(find.text('Campus operations'), findsNothing);
+
+    await _tapVisible(tester, find.text('Admin login'));
+    expect(find.byType(AdminPortalView), findsOneWidget);
+    expect(
+      tester.getSize(find.byType(AdminPortalView)).width,
+      kIsWeb ? 1280 : PhoneViewport.maxWidth,
+    );
+    expect(find.text('Uni360 Administration'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to your account'), findsOneWidget);
+    expect(
+      tester.getSize(find.byType(SafeArea).first).width,
+      PhoneViewport.maxWidth,
+    );
+  });
+
   testWidgets('Intake displays triage and requires approval before dispatch', (
     tester,
   ) async {
@@ -220,8 +280,7 @@ void main() {
       accounts.profile.id,
       status: 'reported',
     );
-    await _signIn(tester, accounts, repository);
-    await _tapVisible(tester, find.text('Corrective Maintenance'));
+    await _openAdminQueue(tester, repository);
     await _tapVisible(tester, find.text('Burst pipe'));
     expect(find.textContaining('87%'), findsOneWidget);
     expect(find.text('Assign approved work'), findsNothing);
@@ -246,13 +305,45 @@ void main() {
     await _signIn(tester, accounts, repository);
     await _tapVisible(tester, find.text('Corrective Maintenance'));
     await _tapVisible(tester, find.text('Burst pipe'));
+    final withdraw = find.widgetWithText(FilledButton, 'Withdraw report');
+    final trigger = tester.widget<FilledButton>(withdraw);
+    expect(
+      trigger.style?.backgroundColor?.resolve({}),
+      Theme.of(tester.element(withdraw)).colorScheme.error,
+    );
     await _tapVisible(tester, find.text('Withdraw report'));
     expect(find.text('Withdraw this report?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(repository.actions, isEmpty);
+    await _tapVisible(tester, find.text('Withdraw report'));
     await tester.tap(find.text('Withdraw'));
     await tester.pumpAndSettle();
     expect(repository.actions, ['withdraw']);
     expect(find.text('Withdrawn'), findsOneWidget);
     expect(find.text('Edit pending report'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Worker filters fit a narrow screen and reset the result list', (
+    tester,
+  ) async {
+    final accounts = TestAccounts();
+    final repository = _CorrectiveFixture(
+      accounts.profile.id,
+      status: 'assigned',
+    );
+    await _signIn(tester, accounts, repository, width: 320);
+    await _tapVisible(tester, find.text('Corrective Maintenance'));
+    await _tapVisible(tester, find.text('Filter by priority and status'));
+    await _tapVisible(tester, find.text('All priorities'));
+    await tester.tap(find.text('Low').last);
+    await tester.pumpAndSettle();
+    expect(find.text('No incidents match these filters.'), findsOneWidget);
+    expect(find.text('Burst pipe'), findsNothing);
+    await _tapVisible(tester, find.text('Clear filters'));
+    expect(find.text('Burst pipe'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -294,8 +385,7 @@ void main() {
         accounts.profile.id,
         status: 'submitted',
       );
-      await _signIn(tester, accounts, repository);
-      await _tapVisible(tester, find.text('Corrective Maintenance'));
+      await _openAdminQueue(tester, repository);
       expect(find.text('Incident command centre'), findsOneWidget);
       await _tapVisible(tester, find.text('Burst pipe'));
       await _tapVisible(tester, find.text('Approve and resolve'));

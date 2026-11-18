@@ -42,10 +42,14 @@ class Uni360App extends StatefulWidget {
 }
 
 class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
-  late final _accounts = AccountController(widget.accounts);
+  late final _accounts = AccountController(
+    widget.accounts,
+    administratorsUsePortal: widget.corrective != null,
+  );
   late final _adminVisible = ValueNotifier(
     kIsWeb && Uri.base.fragment == adminPortalRoute,
   );
+  Route<dynamic>? _adminEntry;
   Timer? _sessionTimer;
   StreamSubscription<AuthState>? _recoverySubscription;
   late bool _recovering = widget.initialRecovery;
@@ -93,39 +97,41 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       navigatorObservers: [
-        _AdminRouteObserver((visible) {
+        _AdminRouteObserver((topRoute) {
+          if (!kIsWeb) return;
+          if (topRoute.settings.name == adminPortalRoute) {
+            _adminEntry = topRoute;
+          }
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _adminVisible.value = kIsWeb && visible;
+            if (mounted) _adminVisible.value = _adminEntry?.isActive == true;
           });
         }),
       ],
       builder: (context, child) => ValueListenableBuilder<bool>(
         valueListenable: _adminVisible,
         child: Listener(onPointerDown: (_) => _accounts.touch(), child: child!),
-        builder: (context, visible, navigator) => PhoneViewport(
-          fullWidth:
-              visible ||
-              (kIsWeb &&
-                  widget.corrective != null &&
-                  _accounts.account?.role.isAdministrator == true),
-          child: navigator!,
-        ),
+        builder: (context, visible, navigator) =>
+            PhoneViewport(fullWidth: visible, child: navigator!),
       ),
       routes: {
         adminPortalRoute: (context) => Scaffold(
           appBar: AppBar(title: const Text('Uni360 Administration')),
-          body: const SafeArea(child: AdminPortalView()),
+          body: SafeArea(
+            child: AdminPortalView(
+              correctiveBuilder: widget.corrective == null
+                  ? null
+                  : (client, administratorId, returnToPortal) =>
+                        CorrectiveAdmin(
+                          repository: CorrectiveRepository(
+                            client,
+                            actorId: administratorId,
+                          ),
+                          administratorId: administratorId,
+                          onReturnToPortal: returnToPortal,
+                        ),
+            ),
+          ),
         ),
-        correctiveAdminRoute: (context) {
-          final account = _accounts.account;
-          final repository = widget.corrective;
-          if (account == null ||
-              !account.role.isAdministrator ||
-              repository == null) {
-            return _home();
-          }
-          return CorrectiveAdmin(repository: repository, account: account);
-        },
       },
       home: _home(),
     ),
@@ -179,7 +185,8 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
         workforceDetails: workforceDetails,
       );
     }
-    if (widget.corrective case final corrective?) {
+    if (widget.corrective case final corrective?
+        when account.role == AccountRole.reporter) {
       return CampusWorkspace(
         accounts: _accounts,
         account: account,
@@ -211,10 +218,10 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
 
 class _AdminRouteObserver extends NavigatorObserver {
   _AdminRouteObserver(this.onChanged);
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<Route<dynamic>> onChanged;
 
   @override
   void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
-    onChanged(topRoute.settings.name == adminPortalRoute);
+    onChanged(topRoute);
   }
 }

@@ -40,6 +40,7 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
   int _request = 0;
   bool _loading = true;
   String? _priority, _status;
+  int _updatesRefresh = 0;
 
   @override
   void initState() {
@@ -97,18 +98,32 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
   }
 
   Future<void> _report() async {
-    final id = await Navigator.of(context).push(
-      MaterialPageRoute<String>(
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute<IncidentReportResult>(
         builder: (_) => IncidentReportScreen(widget.repository),
       ),
     );
-    if (!mounted) return;
-    if (id == null) {
-      unawaited(_load());
+    if (!mounted || result == null) return;
+    _selectTab(1);
+    unawaited(_load());
+    if (result.openDetails) await _open(result.id);
+  }
+
+  void _selectTab(int tab) {
+    if (tab == _tab) return;
+    setState(() {
+      _tab = tab;
+      _priority = null;
+      _status = null;
+    });
+  }
+
+  Future<void> _refreshCurrentTab() async {
+    if (_tab == 2) {
+      setState(() => _updatesRefresh++);
       return;
     }
-    setState(() => _tab = 1);
-    await _open(id);
+    await _load();
   }
 
   @override
@@ -127,7 +142,11 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
         .where(
           (incident) =>
               (_priority == null || incident.urgency == _priority) &&
-              (_status == null || incident.status == _status),
+              (_status == null ||
+                  (incident.data['withdrawn_at'] == null
+                          ? incident.status
+                          : 'withdrawn') ==
+                      _status),
         )
         .toList();
     if (_tab == 0) {
@@ -144,14 +163,14 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
         actions: [
           IconButton(
             tooltip: 'Refresh incidents',
-            onPressed: _load,
+            onPressed: _refreshCurrentTab,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: _refreshCurrentTab,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
@@ -176,15 +195,12 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
                   const ButtonSegment(value: 2, label: Text('Updates')),
                 ],
                 selected: {_tab},
-                onSelectionChanged: (value) => setState(() {
-                  _tab = value.first;
-                  _priority = null;
-                  _status = null;
-                }),
+                onSelectionChanged: (value) => _selectTab(value.first),
               ),
               correctiveGap(16),
               if (_tab == 2)
                 CorrectiveNotifications(
+                  key: ValueKey(_updatesRefresh),
                   repository: widget.repository,
                   openIncident: _open,
                 ),
@@ -206,11 +222,14 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 ExpansionTile(
+                  key: ValueKey(_tab),
                   title: const Text('Filter by priority and status'),
+                  childrenPadding: const EdgeInsets.fromLTRB(0, 10, 0, 12),
                   children: [
                     DropdownButtonFormField<String>(
-                      key: ValueKey('priority-$_tab'),
+                      key: ValueKey(('priority', _priority)),
                       initialValue: _priority ?? '',
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Priority'),
                       items: [
                         const DropdownMenuItem(
@@ -224,9 +243,9 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
                         () => _priority = value == '' ? null : value,
                       ),
                     ),
-                    correctiveGap(8),
+                    correctiveGap(12),
                     DropdownButtonFormField<String>(
-                      key: ValueKey('status-$_tab'),
+                      key: ValueKey(('status', _status)),
                       initialValue: _status ?? '',
                       isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Status'),
@@ -238,15 +257,30 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
                         for (final entry in correctiveStatuses.entries)
                           DropdownMenuItem(
                             value: entry.key,
-                            child: Text(entry.value),
+                            child: Text(
+                              entry.value,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
+                        const DropdownMenuItem(
+                          value: 'withdrawn',
+                          child: Text('Withdrawn'),
+                        ),
                       ],
                       onChanged: (value) =>
                           setState(() => _status = value == '' ? null : value),
                     ),
-                    correctiveGap(),
+                    if (_priority != null || _status != null)
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _priority = null;
+                          _status = null;
+                        }),
+                        child: const Text('Clear filters'),
+                      ),
                   ],
                 ),
+                correctiveGap(8),
               ],
               if (_tab < 2 && !_loading && _error == null && items.isEmpty)
                 CorrectiveMessage(
@@ -548,7 +582,7 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
   }
 
   Future<void> _editPending(CorrectiveIncident incident) async {
-    final updated = await Navigator.of(context).push<String>(
+    final updated = await Navigator.of(context).push<IncidentReportResult>(
       MaterialPageRoute(
         builder: (_) =>
             IncidentReportScreen(widget.repository, pending: incident),
@@ -561,6 +595,10 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
+        icon: Icon(
+          Icons.warning_amber_rounded,
+          color: Theme.of(dialog).colorScheme.error,
+        ),
         title: const Text('Withdraw this report?'),
         content: Text(
           '${incident.reference} will leave the review queue. You can still see it in your history.',
@@ -571,6 +609,7 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
+            style: _withdrawStyle(dialog),
             onPressed: () => Navigator.pop(dialog, true),
             child: const Text('Withdraw'),
           ),
@@ -580,6 +619,14 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
     if (!mounted || confirmed != true) return;
     await _run(
       () => widget.repository.reporterAction(widget.id, 'withdraw', const {}),
+    );
+  }
+
+  ButtonStyle _withdrawStyle(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return FilledButton.styleFrom(
+      backgroundColor: colors.error,
+      foregroundColor: colors.onError,
     );
   }
 
@@ -808,9 +855,11 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
                       icon: const Icon(Icons.edit_outlined),
                       label: const Text('Edit pending report'),
                     ),
-                    TextButton(
+                    FilledButton.icon(
+                      style: _withdrawStyle(context),
                       onPressed: updating ? null : () => _withdraw(incident),
-                      child: const Text('Withdraw report'),
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Withdraw report'),
                     ),
                   ],
                 ),

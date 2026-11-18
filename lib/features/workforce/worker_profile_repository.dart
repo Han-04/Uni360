@@ -61,7 +61,7 @@ class WorkerProfileRepository {
         .schema('maintenance_api')
         .from('worker_profile')
         .select('''
-      job_role,assigned_zone,standby_status,current_workload,employment_status,
+      *,
       worker_skill(skill(skill_name)),
       worker_certification(certification_name,certification_no,expiry_date,verified),
       worker_availability(availability,shift_start,shift_end,availability_status,leave_status)

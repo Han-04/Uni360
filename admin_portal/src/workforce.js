@@ -5,7 +5,6 @@ import { bindCertifications, certificationSection } from './worker-certification
 import { mountWorkerAvailability } from './worker-availability.js';
 
 const pageSize = 25;
-const profileFields = 'worker_id,job_role,assigned_zone,employment_status,current_workload,standby_status,daily_work_limit_minutes';
 export function mountWorkforce(content, client) {
   let query = '';
   let page = 0;
@@ -59,7 +58,7 @@ export function mountWorkforce(content, client) {
     pending('Worker profile');
     try {
       const [profile, assignments, certificates] = await Promise.all([
-        result(client.schema('maintenance_api').from('worker_profile').select(profileFields).eq('worker_id', worker.worker_id).single()),
+        result(client.schema('maintenance_api').from('worker_profile').select().eq('worker_id', worker.worker_id).single()),
         result(client.schema('maintenance_api').from('worker_skill').select('worker_skill_id,skill(skill_name)').eq('worker_id', worker.worker_id)),
         result(client.schema('maintenance_api').from('worker_certification')
           .select('certification_id,certification_name,certification_no,expiry_date,verified,document_path')
@@ -72,7 +71,7 @@ export function mountWorkforce(content, client) {
         <p class="feedback" role="status">${escape(message)}</p>
         <section class="card workforce-section"><header class="workforce-heading"><h2>Worker profile</h2><button class="secondary" data-profile>Edit profile</button></header>
           <dl class="worker-facts"><div><dt>Job role</dt><dd>${escape(profile.job_role ?? '—')}</dd></div>
-          <div><dt>Assigned zone</dt><dd>${escape(profile.assigned_zone ?? '—')}</dd></div>
+          ${Object.hasOwn(profile, 'assigned_zone') ? `<div><dt>Assigned zone</dt><dd>${escape(profile.assigned_zone ?? '-')}</dd></div>` : ''}
           <div><dt>Employment status</dt><dd>${escape(profile.employment_status)}</dd></div>
           <div><dt>Current workload</dt><dd>${escape(profile.current_workload)}</dd></div>
           <div><dt>Daily work limit</dt><dd>${escape(profile.daily_work_limit_minutes)} min</dd></div>
@@ -96,15 +95,16 @@ export function mountWorkforce(content, client) {
   }
 
   function editProfile(profile, updated) {
+    const hasZone = Object.hasOwn(profile, 'assigned_zone');
     openForm(content, 'Edit worker profile', `${field('Job role', 'job_role', profile.job_role, 'maxlength="120"')}
-      ${field('Assigned zone', 'assigned_zone', profile.assigned_zone, 'maxlength="120"')}
+      ${hasZone ? field('Assigned zone', 'assigned_zone', profile.assigned_zone, 'maxlength="120"') : ''}
       ${field('Employment status', 'employment_status', profile.employment_status, 'required maxlength="60"')}
       ${field('Current workload', 'current_workload', profile.current_workload, 'type="number" min="0" max="2147483647" step="1" required')}
       ${field('Daily work limit (minutes)', 'daily_work_limit_minutes', profile.daily_work_limit_minutes, 'type="number" min="1" max="1440" step="1" required')}
       ${checkbox('Available for standby', 'standby_status', profile.standby_status)}`,
     values => write(client.schema('maintenance_api').from('worker_profile').update({
       job_role: optional(values.get('job_role')),
-      assigned_zone: optional(values.get('assigned_zone')),
+      ...(hasZone ? { assigned_zone: optional(values.get('assigned_zone')) } : {}),
       employment_status: values.get('employment_status').trim(),
       current_workload: Number(values.get('current_workload')),
       daily_work_limit_minutes: Number(values.get('daily_work_limit_minutes')),

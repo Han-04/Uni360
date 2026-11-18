@@ -1,18 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/theme/app_theme.dart';
-import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_mobile.dart';
 import '../features/corrective/corrective_repository.dart';
 import '../features/corrective/corrective_widgets.dart';
 import '../shared/account/account.dart';
 import '../shared/account/account_controller.dart';
 import '../shared/account/presentation/account_profile_screen.dart';
-import '../shared/account/presentation/admin_portal_button.dart';
 
 class CampusWorkspace extends StatefulWidget {
   const CampusWorkspace({
@@ -35,16 +32,13 @@ class CampusWorkspace extends StatefulWidget {
 class _CampusWorkspaceState extends State<CampusWorkspace> {
   RealtimeChannel? _channel;
   Future<int>? _updates;
-  bool get _worker => widget.account.role == AccountRole.worker;
   bool get _reporter => widget.account.role == AccountRole.reporter;
 
   @override
   void initState() {
     super.initState();
-    if (!widget.account.role.isAdministrator) {
-      _updates = widget.corrective.unreadNotifications();
-      _channel = widget.corrective.watch('workspace', _reload);
-    }
+    _updates = widget.corrective.unreadNotifications();
+    _channel = widget.corrective.watch('workspace', _reload);
   }
 
   @override
@@ -56,7 +50,7 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
   }
 
   void _reload() {
-    if (mounted && !widget.account.role.isAdministrator) {
+    if (mounted) {
       setState(() {
         _updates = widget.corrective.unreadNotifications();
       });
@@ -64,10 +58,6 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
   }
 
   Future<void> _corrective({int tab = 0}) async {
-    if (widget.account.role.isAdministrator) {
-      await Navigator.of(context).pushNamed(correctiveAdminRoute);
-      return;
-    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CorrectiveMobile(
@@ -80,15 +70,6 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
     _reload();
   }
 
-  Future<void> _preventive() async {
-    if (_worker) {
-      await Navigator.of(context)
-          .push(MaterialPageRoute<void>(builder: (_) => widget.preventive!));
-    } else {
-      await Navigator.of(context).pushNamed(adminPortalRoute);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final name = widget.account.name.trim().split(RegExp(r'\s+')).first;
@@ -97,26 +78,23 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
         title: 'Corrective Maintenance',
         description: _reporter
             ? 'Report a campus fault and track your requests.'
-            : _worker
-            ? 'Report a fault, respond to an assignment or track a repair.'
-            : 'Verify incidents, dispatch workers and review repair evidence.',
+            : 'Report a fault, respond to an assignment or track a repair.',
         icon: Icons.handyman_outlined,
         color: correctiveAccent,
         tint: correctiveTint,
         onOpen: _corrective,
       ),
-      if (!_reporter)
+      if (widget.preventive case final preventive?)
         _ModuleTile(
           title: 'Preventive Maintenance',
-          description: _worker
-              ? 'View scheduled inspections, servicing and campus tasks.'
-              : 'Open the administration portal for facilities, schedules and task approvals.',
+          description:
+              'View scheduled inspections, servicing and campus tasks.',
           icon: Icons.event_available_outlined,
           color: AppColors.teal,
           tint: const Color(0xFFE5F4EF),
-          onOpen: _worker || kIsWeb ? _preventive : null,
-          disabledLabel:
-              'Open Uni360 on a computer to manage preventive schedules.',
+          onOpen: () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute<void>(builder: (_) => preventive)),
         ),
     ];
     return Scaffold(
@@ -228,14 +206,12 @@ class _ModuleTile extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.tint,
-    this.onOpen,
-    this.disabledLabel,
+    required this.onOpen,
   });
   final String title, description;
-  final String? disabledLabel;
   final IconData icon;
   final Color color, tint;
-  final VoidCallback? onOpen;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -274,7 +250,7 @@ class _ModuleTile extends StatelessWidget {
                   ),
                   correctiveGap(5),
                   Text(
-                    onOpen == null ? disabledLabel ?? description : description,
+                    description,
                     style: const TextStyle(
                       color: AppColors.muted,
                       height: 1.35,
@@ -283,11 +259,10 @@ class _ModuleTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (onOpen != null)
-              const Padding(
-                padding: EdgeInsets.only(top: 7, left: 3),
-                child: Icon(Icons.chevron_right),
-              ),
+            const Padding(
+              padding: EdgeInsets.only(top: 7, left: 3),
+              child: Icon(Icons.chevron_right),
+            ),
           ],
         ),
       ),

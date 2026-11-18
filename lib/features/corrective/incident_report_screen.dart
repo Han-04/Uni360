@@ -11,6 +11,8 @@ import 'corrective_photo_diagnostics.dart';
 import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 
+typedef IncidentReportResult = ({String id, bool openDetails});
+
 class IncidentReportScreen extends StatefulWidget {
   const IncidentReportScreen(
     this.repository, {
@@ -254,7 +256,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           'photo': _stagedPath,
         });
         _submitted = true;
-        if (mounted) Navigator.of(context).pop(_id);
+        if (mounted) Navigator.of(context).pop((id: _id, openDetails: false));
         return;
       }
       await widget.repository.report(report, photo: _stagedPath);
@@ -285,7 +287,9 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           ],
         ),
       );
-      if (mounted) Navigator.of(context).pop(track == true ? _id : null);
+      if (mounted) {
+        Navigator.of(context).pop((id: _id, openDetails: track == true));
+      }
     } on Exception catch (error) {
       if (mounted) {
         setState(() => _error = correctiveError(error));

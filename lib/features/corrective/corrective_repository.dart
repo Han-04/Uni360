@@ -102,8 +102,9 @@ class CorrectiveDetail {
 }
 
 class CorrectiveRepository {
-  CorrectiveRepository(this.client);
+  CorrectiveRepository(this.client, {this._actorId});
   final SupabaseClient client;
+  final String? _actorId;
   static const _bucket = 'corrective-evidence';
   static const _uuid = Uuid();
   SupabaseQuerySchema get _maintenance => client.schema('maintenance_api');
@@ -209,7 +210,7 @@ class CorrectiveRepository {
                 ),
           callback: (_) => onChange(),
         );
-    final recipientId = client.auth.currentUser?.id;
+    final recipientId = _actorId ?? client.auth.currentUser?.id;
     if (incidentId == null && recipientId != null) {
       channel.onPostgresChanges(
         event: PostgresChangeEvent.all,
@@ -327,7 +328,7 @@ class CorrectiveRepository {
     Uint8List bytes, {
     required bool report,
   }) async {
-    final actor = client.auth.currentUser?.id;
+    final actor = _actorId ?? client.auth.currentUser?.id;
     if (actor == null) throw const CorrectiveException('Sign in to continue.');
     if (bytes.length > 10485760) {
       throw const CorrectiveException(

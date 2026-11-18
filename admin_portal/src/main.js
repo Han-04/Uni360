@@ -16,6 +16,7 @@ let accountView;
 let search = '';
 let page = 0;
 let busy = false;
+let hasCorrectiveWorkspace = false;
 
 class RequestError extends Error {
   constructor(message, status) { super(message); this.status = status; }
@@ -32,6 +33,14 @@ async function request(action, parameters = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new RequestError(data.error || 'The account service is unavailable. Try again.', response.status);
   return data;
+}
+
+function sendCorrectiveSession(type, session) {
+  window.parent.postMessage({
+    type,
+    userId: session?.user.id,
+    accessToken: session?.access_token,
+  }, window.location.origin);
 }
 
 function login(message = '') {
@@ -87,10 +96,19 @@ function workspace(section) {
       <button id="facilities-nav" class="nav-item" ${section === 'facilities' ? 'aria-current="page"' : ''}>Facilities</button>
       <button id="tasks-nav" class="nav-item" ${section === 'tasks' ? 'aria-current="page"' : ''}>Schedule Task</button>
       <button id="approvals-nav" class="nav-item" ${section === 'approvals' ? 'aria-current="page"' : ''}>Task approvals</button>
+      ${hasCorrectiveWorkspace ? '<button id="corrective-nav" class="nav-item">Corrective Maintenance</button>' : ''}
     </nav>
     <div class="identity"><strong>${escape(accountView.actor.full_name)}</strong><span>${superAdmin ? 'Super Administrator' : 'Administrator'}</span></div>
     <button id="logout" class="secondary">Sign out</button>
   </aside><section class="content"></section></div>`;
+  const corrective = app.querySelector('#corrective-nav');
+  if (corrective) corrective.onclick = async () => {
+    if (busy) return;
+    const { data: { session } } = await client.auth.getSession();
+    if (!corrective.isConnected) return;
+    if (session && accountView) sendCorrectiveSession('uni360-admin-open-corrective', session);
+    else login('Your session ended. Sign in again.');
+  };
   app.querySelector('#logout').onclick = async () => {
     if (busy) return;
     await client.auth.signOut({ scope: 'local' }).catch(() => {});
@@ -218,6 +236,14 @@ function start(url, key) {
   supabaseKey = key;
   if (url && typeof key === 'string' && key.startsWith('sb_publishable_')) {
     client = createClient(url, key, { auth: { persistSession: false, detectSessionInUrl: false } });
+    if (hasCorrectiveWorkspace) client.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED' && session) {
+        sendCorrectiveSession('uni360-admin-token-refreshed', session);
+      } else if (event === 'SIGNED_OUT') {
+        sendCorrectiveSession('uni360-admin-sign-out');
+        if (accountView) login('Your session ended. Sign in again.');
+      }
+    });
   }
   login();
 }
@@ -228,6 +254,7 @@ if (window.parent !== window) {
     if (event.source !== window.parent || event.origin !== window.location.origin ||
         event.data?.type !== 'uni360-admin-config') return;
     window.removeEventListener('message', configure);
+    hasCorrectiveWorkspace = event.data.corrective === true;
     start(event.data.url, event.data.key);
   };
   window.addEventListener('message', configure);

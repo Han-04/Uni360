@@ -1,10 +1,10 @@
 # Uni360 desktop administration
 
-Open the Uni360 project root in Android Studio. Choose **Uni360 Web**, select **Chrome** in the device dropdown, and click **Run**. On the Uni360 login page, select **Admin login**. The admin page opens at `/#/admin` on the current localhost port. The back arrow returns to the worker login.
+Open the Uni360 project root in Android Studio. Choose **Uni360 Web**, select **Chrome** in the device dropdown, and click **Run**. On the Uni360 welcome screen, select **Admin login** to open the desktop sign-in at `/#/admin`. Choose **Corrective Maintenance** in the administration sidebar to review reports. The back arrow on the sign-in page returns to the mobile login.
 
 The configuration loads `config/supabase.json` automatically. The Flutter web server serves the bundled portal from `web/admin`. Android Studio starts one web server for both pages.
 
-Sign in with an existing Uni360 account. Test credentials are in `config/supabase.test-accounts.local.json`.
+Sign in with an existing Uni360 Administrator or Super Administrator account.
 
 | Role | Account records it can manage |
 | --- | --- |
@@ -29,6 +29,6 @@ From the project root, run:
 flutter run -d chrome --dart-define-from-file=config/supabase.json
 ```
 
-After editing the portal source, regenerate the embedded web assets with `npm.cmd ci --prefix admin_portal` and `npm.cmd run build:flutter --prefix admin_portal`. The portal receives the Supabase project URL and publishable key from Flutter at runtime.
+After editing the portal source, regenerate the embedded web assets with `npm.cmd ci --prefix admin_portal` and `npm.cmd run build:flutter --prefix admin_portal`. The portal receives the Supabase project URL and publishable key from Flutter at runtime. Corrective Maintenance uses the same desktop session as the administration portal.
 
 The `manage-accounts` Edge Function is deployed in Uni360 Supabase. Its source is in `supabase/functions/manage-accounts/index.ts`. It checks each Auth token and the caller's current role and active status. Creation uses the server's Auth admin credential, inserts the linked account, and compensates for a failed insert by removing the newly created Auth user. New Worker records provision their workforce profile through the existing database trigger. The browser only uses the publishable key and the signed-in user's token.

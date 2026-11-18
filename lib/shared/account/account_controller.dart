@@ -6,7 +6,7 @@ import 'account.dart';
 import 'account_repository.dart';
 
 class AccountController extends ChangeNotifier {
-  AccountController(this._repository) {
+  AccountController(this._repository, {this.administratorsUsePortal = false}) {
     _subscription = _repository.signedOut.listen((_) {
       if (_account == null || _disposed) return;
       _account = null;
@@ -16,6 +16,7 @@ class AccountController extends ChangeNotifier {
   }
 
   final AccountRepository _repository;
+  final bool administratorsUsePortal;
   late final StreamSubscription<void> _subscription;
   Account? _account;
   bool _disposed = false;
@@ -39,6 +40,14 @@ class AccountController extends ChangeNotifier {
       if (_disposed) {
         await _repository.signOut();
         return;
+      }
+      if (administratorsUsePortal && signedIn.role.isAdministrator) {
+        try {
+          await _repository.signOut();
+        } on Exception {
+          // The Supabase client has already cleared its local session.
+        }
+        throw const AccountException('Use Admin login on the Uni360 website.');
       }
       _account = signedIn;
       lastActivity = DateTime.now();
