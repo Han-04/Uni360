@@ -17,6 +17,8 @@ class AdminAvailability extends StatefulWidget {
 }
 
 class _AdminAvailabilityState extends State<AdminAvailability> {
+  static const _noAssignedTasksMessage = 'No assigned task for this date';
+
   AdminData get data => widget.data;
   String get workerId => widget.workerId;
   late DateTime month = DateTime.utc(adminToday().year, adminToday().month);
@@ -253,21 +255,16 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
     );
   }
 
-  Future<void> edit([AdminRow? row]) async {
-    final first = day ?? adminToday();
+  Future<void> edit(AdminRow row) async {
     final saved = await adminForm(
       context,
-      row == null ? 'Add availability' : 'Edit availability',
+      'Edit availability',
       {
-        'availability': row?['availability'],
-        'start': row == null
-            ? first.add(const Duration(hours: 8))
-            : malaysiaDateTime(row['shift_start']),
-        'end': row == null
-            ? first.add(const Duration(hours: 17))
-            : malaysiaDateTime(row['shift_end']),
-        'availability_status': row?['availability_status'] ?? 'available',
-        'leave_status': row?['leave_status'] ?? 'none',
+        'availability': row['availability'],
+        'start': malaysiaDateTime(row['shift_start']),
+        'end': malaysiaDateTime(row['shift_end']),
+        'availability_status': row['availability_status'] ?? 'available',
+        'leave_status': row['leave_status'] ?? 'none',
       },
       (values, refresh) => [
         const Text('Malaysia time'),
@@ -278,12 +275,12 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
         timestamp(values, 'end', 'Ends', refresh),
         const SizedBox(height: 8),
         adminSelect(values, 'availability_status', 'Availability', {
-          if (row?['availability_status'] case final String value) value: value,
+          if (row['availability_status'] case final String value) value: value,
           'available': 'Available',
           'unavailable': 'Unavailable',
         }, refresh),
         adminSelect(values, 'leave_status', 'Leave status', {
-          if (row?['leave_status'] case final String value) value: value,
+          if (row['leave_status'] case final String value) value: value,
           'none': 'None',
           'pending': 'Pending',
           'approved': 'Approved',
@@ -307,12 +304,10 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
         };
         final table = data.table('worker_availability');
         await data.write(
-          row == null
-              ? table.insert({...payload, 'worker_id': workerId})
-              : table
-                    .update(payload)
-                    .eq('worker_id', workerId)
-                    .eq('availability_id', row['availability_id']),
+          table
+              .update(payload)
+              .eq('worker_id', workerId)
+              .eq('availability_id', row['availability_id']),
           'availability_id',
         );
         month = DateTime.utc(start.year, start.month);
@@ -375,6 +370,8 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
         ],
       ],
       empty: 'No performance records.',
+      framed: false,
+      darkHeading: true,
     );
   }
 
@@ -382,82 +379,94 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      AdminHeading(
+      AdminSectionCard(
         'Date availability',
         subtitle: 'Malaysia time',
-        actions: [
-          FilledButton(onPressed: edit, child: const Text('Add availability')),
-        ],
-      ),
-      AdminLoad(
-        listing,
-        (rows) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            calendar(rows),
-            const SizedBox(height: 12),
-            if (day case final selected?) ...[
-              AdminHeading('Assigned tasks · ${isoDate(selected)}'),
-              AdminLoad(
-                tasks!,
-                (orders) => AdminTable(
-                  ['Task', 'Location', 'Time', 'Status', 'Worked time'],
-                  [
-                    for (final row in orders)
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: AdminLoad(
+            listing,
+            (rows) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(child: calendar(rows)),
+                const SizedBox(height: 12),
+                if (day case final selected?) ...[
+                  AdminHeading('Assigned tasks · ${isoDate(selected)}'),
+                  AdminLoad(
+                    tasks!,
+                    (orders) => AdminTable(
+                      ['Task', 'Location', 'Time', 'Status', 'Worked time'],
                       [
-                        adminCell(row['title']),
-                        adminCell(orderLocation(row)),
-                        adminCell(scheduleTime(row)),
-                        adminCell(orderStatus(row)),
-                        if (row['preventive_work_completion']
-                            case final AdminRow completion)
-                          adminAction(
-                            completion['actual_minutes'] == null
-                                ? 'Record worked time'
-                                : 'Worked ${completion['actual_minutes']} min · Edit',
-                            () => workedTime(row, completion),
-                          )
-                        else
-                          adminCell(null),
+                        for (final row in orders)
+                          [
+                            adminCell(row['title']),
+                            adminCell(orderLocation(row)),
+                            adminCell(scheduleTime(row)),
+                            adminCell(orderStatus(row)),
+                            if (row['preventive_work_completion']
+                                case final AdminRow completion)
+                              adminAction(
+                                completion['actual_minutes'] == null
+                                    ? 'Record worked time'
+                                    : 'Worked ${completion['actual_minutes']} min · Edit',
+                                () => workedTime(row, completion),
+                              )
+                            else
+                              adminCell(null),
+                          ],
                       ],
-                  ],
-                  empty: 'No assigned tasks for this date.',
-                ),
-                retry: () => showDay(selected),
-              ),
-              if (dayRows(selected, rows) case final selectedRecords
-                  when selectedRecords.isNotEmpty)
-                ExpansionTile(
-                  key: ValueKey(selected),
-                  title: const Text('Availability for selected date'),
-                  tilePadding: EdgeInsets.zero,
-                  children: [
-                    for (final row in selectedRecords)
-                      ListTile(
-                        title: Text('${row['availability']}'),
-                        subtitle: Text(
-                          '${malaysiaStamp(row['shift_start'])} – ${malaysiaStamp(row['shift_end'])} · ${row['availability_status']} · Leave ${row['leave_status']}',
-                        ),
-                        trailing:
-                            row['availability'] == 'Approved leave' &&
-                                row['leave_status'] == 'approved'
-                            ? const Text('Leave request')
-                            : adminAction('Edit availability', () => edit(row)),
+                      empty: _noAssignedTasksMessage,
+                      emptyState: const AdminIllustratedEmptyState(
+                        _noAssignedTasksMessage,
+                        asset: 'assets/workforce/no-assigned-task.png',
                       ),
-                  ],
-                ),
-            ] else
-              const Text('Select a date to see this worker’s tasks.'),
-          ],
+                      darkHeading: true,
+                    ),
+                    retry: () => showDay(selected),
+                  ),
+                  if (dayRows(selected, rows) case final selectedRecords
+                      when selectedRecords.isNotEmpty)
+                    ExpansionTile(
+                      key: ValueKey(selected),
+                      title: const Text('Availability for selected date'),
+                      tilePadding: EdgeInsets.zero,
+                      children: [
+                        for (final row in selectedRecords)
+                          ListTile(
+                            title: Text('${row['availability']}'),
+                            subtitle: Text(
+                              '${malaysiaStamp(row['shift_start'])} – ${malaysiaStamp(row['shift_end'])} · ${row['availability_status']} · Leave ${row['leave_status']}',
+                            ),
+                            trailing:
+                                row['availability'] == 'Approved leave' &&
+                                    row['leave_status'] == 'approved'
+                                ? const Text('Leave request')
+                                : adminAction(
+                                    'Edit availability',
+                                    () => edit(row),
+                                  ),
+                          ),
+                      ],
+                    ),
+                ] else
+                  const Text('Select a date to see this worker’s tasks.'),
+              ],
+            ),
+            retry: () => move(0),
+          ),
         ),
-        retry: () => move(0),
       ),
       const SizedBox(height: 16),
-      AdminHeading(
+      AdminSectionCard(
         'Worker performance',
         subtitle: MaterialLocalizations.of(context).formatMonthYear(month),
+        child: AdminLoad(
+          performance,
+          performanceSummary,
+          retry: reloadPerformance,
+        ),
       ),
-      AdminLoad(performance, performanceSummary, retry: reloadPerformance),
     ],
   );
 }

@@ -220,9 +220,7 @@ class _AdminApprovalsState extends State<AdminApprovals> {
         AdminHeading(
           'Task approvals',
           subtitle: 'Review the checklist and evidence for submitted work.',
-          actions: [
-            OutlinedButton(onPressed: reload, child: const Text('Refresh')),
-          ],
+          actions: [AdminCommandButton(label: 'Refresh', onPressed: reload)],
         ),
         AdminLoad(
           listing,
@@ -250,6 +248,7 @@ class _AdminApprovalsState extends State<AdminApprovals> {
                     ],
                 ],
                 empty: 'No tasks are awaiting approval.',
+                darkHeading: true,
               ),
               AdminPager(
                 page: page,

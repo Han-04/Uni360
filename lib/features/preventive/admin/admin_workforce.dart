@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/link.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../shared/account/presentation/profile_avatar.dart';
 import 'admin_availability.dart';
 import 'admin_data.dart';
 import 'admin_widgets.dart';
@@ -20,11 +21,13 @@ class _AdminWorkforceState extends State<AdminWorkforce> {
   AdminData get data => widget.data;
   int page = 0;
   String search = '';
+  String? jobRole;
   late var listing = data.workers();
+  late var roles = data.workerJobRoles();
   AdminRow? worker;
 
   void reload() {
-    final next = data.workers(search, page);
+    final next = data.workers(search: search, page: page, jobRole: jobRole);
     setState(() {
       listing = next;
     });
@@ -38,7 +41,8 @@ class _AdminWorkforceState extends State<AdminWorkforce> {
         worker: selected,
         back: () => setState(() {
           worker = null;
-          listing = data.workers(search, page);
+          roles = data.workerJobRoles();
+          listing = data.workers(search: search, page: page, jobRole: jobRole);
         }),
       );
     }
@@ -49,25 +53,51 @@ class _AdminWorkforceState extends State<AdminWorkforce> {
           'Workforce management',
           subtitle: 'Manage worker profiles, skills, certifications and date availability.',
         ),
-        AdminSearch('Search by name or employee ID', (value) {
-          search = value;
-          page = 0;
-          reload();
-        }, initial: search),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            AdminSearch('Search by name or employee ID', (value) {
+              search = value;
+              page = 0;
+              reload();
+            }, initial: search),
+            SizedBox(
+              width: 254,
+              child: AdminLoad(
+                roles,
+                (options) => AdminFilterMenu(
+                  label: 'Job role',
+                  value: jobRole ?? '',
+                  options: {
+                    '': 'All job roles',
+                    for (final role in {...options, ?jobRole}) role: role,
+                  },
+                  onChanged: (value) {
+                    jobRole = value.isEmpty ? null : value;
+                    page = 0;
+                    reload();
+                  },
+                ),
+                retry: () => setState(() => roles = data.workerJobRoles()),
+              ),
+            ),
+          ],
+        ),
         AdminLoad(
           listing,
           (rows) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AdminTable(
-                ['Worker', 'Employee ID', 'Job role', 'Employment', 'Actions'],
+                ['Worker', 'Employee ID', 'Job role', 'Actions'],
                 [
                   for (final row in rows.take(25))
                     [
                       adminCell(row['full_name']),
                       adminCell(row['employee_id']),
                       adminCell(row['job_role']),
-                      adminCell(row['employment_status']),
                       adminAction(
                         'Open profile',
                         () => setState(() => worker = row),
@@ -75,6 +105,7 @@ class _AdminWorkforceState extends State<AdminWorkforce> {
                     ],
                 ],
                 empty: 'No matching workers.',
+                darkHeading: true,
               ),
               AdminPager(
                 page: page,
@@ -111,6 +142,9 @@ class _WorkerProfileState extends State<_WorkerProfile> {
   AdminData get data => widget.data;
   String get workerId => widget.worker['worker_id'] as String;
   late var details = load();
+  late final photo = data.workerPhotoUrl(
+    widget.worker['profile_photo_path'] as String?,
+  );
 
   Future<(AdminRow, List<AdminRow>, List<AdminRow>)> load() async {
     final (profile, skills, certificates) = await (
@@ -422,91 +456,128 @@ class _WorkerProfileState extends State<_WorkerProfile> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       adminBackAction('All workers', widget.back),
-      AdminHeading(
-        widget.worker['full_name'] as String,
-        subtitle: widget.worker['employee_id'] as String,
+      Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Row(
+          children: [
+            ExcludeSemantics(
+              child: FutureBuilder(
+                future: photo,
+                builder: (context, snapshot) => ProfileAvatar(
+                  name: widget.worker['full_name'] as String,
+                  dimension: 60,
+                  photoUrl: snapshot.data,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.worker['full_name'] as String,
+                    style: Theme.of(context).textTheme.headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  Text(widget.worker['employee_id'] as String),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
       AdminLoad(details, (result) {
         final (profile, skills, certificates) = result;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AdminHeading(
+            AdminSectionCard(
               'Worker profile',
               actions: [
-                OutlinedButton(
+                AdminCommandButton(
                   onPressed: () => editProfile(profile),
-                  child: const Text('Edit profile'),
+                  label: 'Edit profile',
                 ),
               ],
-            ),
-            AdminTable(
-              ['Job role', 'Employment', 'Workload', 'Daily work limit'],
-              [
+              child: AdminTable(
+                ['Job role', 'Workload', 'Daily work limit'],
                 [
-                  adminCell(profile['job_role']),
-                  adminCell(profile['employment_status']),
-                  adminCell(profile['current_workload']),
-                  adminCell('${profile['daily_work_limit_minutes']} min'),
+                  [
+                    adminCell(profile['job_role']),
+                    adminCell(profile['current_workload']),
+                    adminCell('${profile['daily_work_limit_minutes']} min'),
+                  ],
                 ],
-              ],
-              empty: 'No profile record.',
+                empty: 'No profile record.',
+                framed: false,
+                darkHeading: true,
+              ),
             ),
             const SizedBox(height: 16),
-            AdminHeading(
+            AdminSectionCard(
               'Skills',
               actions: [
-                FilledButton(
-                  onPressed: addSkill,
-                  child: const Text('Add Skill'),
+                AdminCommandButton(onPressed: addSkill, label: 'Add Skill'),
+              ],
+              child: AdminTable(
+                ['Name'],
+                [
+                  for (final row in skills)
+                    if (row['skill']?['skill_name'] case final String name)
+                      [adminCell(name)],
+                ],
+                empty: 'No Skill Added',
+                framed: false,
+                darkHeading: true,
+                emptyState: const AdminIllustratedEmptyState(
+                  'No Skill Added',
+                  asset: 'assets/workforce/empty-workforce-box.png',
                 ),
-              ],
-            ),
-            if (skills.isEmpty) const Text('No skills added.'),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final row in skills)
-                  if (row['skill']?['skill_name'] case final String name)
-                    Chip(label: Text(name)),
-              ],
+              ),
             ),
             const SizedBox(height: 16),
-            AdminHeading(
+            AdminSectionCard(
               'Certifications',
               actions: [
-                FilledButton(
+                AdminCommandButton(
                   onPressed: editCertificate,
-                  child: const Text('Add Certifications'),
+                  label: 'Add Certifications',
                 ),
               ],
-            ),
-            AdminTable(
-              ['Name', 'Certificate ID', 'Expiry', 'Actions'],
-              [
-                for (final row in certificates)
-                  [
-                    adminCell(row['certification_name']),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        adminCell(row['certification_no']),
-                        if (row['document_path'] != null)
-                          IconButton(
-                            onPressed: () => viewCertificate(row),
-                            icon: const Icon(Icons.description_outlined),
-                            tooltip: 'View certificate document',
-                          ),
-                      ],
-                    ),
-                    adminCell(row['expiry_date']),
-                    adminAction(
-                      'Edit certification',
-                      () => editCertificate(row),
-                    ),
-                  ],
-              ],
-              empty: 'No certifications added.',
+              child: AdminTable(
+                ['Name', 'Certificate ID', 'Expiry', 'Actions'],
+                [
+                  for (final row in certificates)
+                    [
+                      adminCell(row['certification_name']),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          adminCell(row['certification_no']),
+                          if (row['document_path'] != null)
+                            IconButton(
+                              onPressed: () => viewCertificate(row),
+                              icon: const Icon(Icons.description_outlined),
+                              tooltip: 'View certificate document',
+                            ),
+                        ],
+                      ),
+                      adminCell(row['expiry_date']),
+                      adminAction(
+                        'Edit certification',
+                        () => editCertificate(row),
+                      ),
+                    ],
+                ],
+                empty: 'No Certification Added',
+                framed: false,
+                darkHeading: true,
+                emptyState: const AdminIllustratedEmptyState(
+                  'No Certification Added',
+                  asset: 'assets/workforce/empty-workforce-box.png',
+                ),
+              ),
             ),
           ],
         );

@@ -434,7 +434,11 @@ class _WorkspaceState extends State<_Workspace> {
         final compact = size.maxWidth < 820;
         final padding = EdgeInsets.all(compact ? 16 : 32);
         final section = switch (index) {
-          0 => AdminAccounts(data: data, superAdmin: superAdmin),
+          0 => DialogTheme(
+            data: DialogTheme.of(context)
+                .copyWith(elevation: 28, shadowColor: const Color(0xA6142234)),
+            child: AdminAccounts(data: data, superAdmin: superAdmin),
+          ),
           1 => AdminWorkforce(data: data),
           2 => AdminFacilities(data: data, padding: padding),
           3 => AdminTaskTemplates(data: data, superAdmin: superAdmin),

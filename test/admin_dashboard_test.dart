@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,6 +9,7 @@ import 'package:uni360/features/preventive/admin/admin_catalog.dart';
 import 'package:uni360/features/preventive/admin/admin_data.dart';
 import 'package:uni360/features/preventive/admin/admin_schedule_review.dart';
 import 'package:uni360/features/preventive/admin/admin_scheduling.dart';
+import 'package:uni360/features/preventive/admin/admin_widgets.dart';
 import 'package:uni360/shared/account/account.dart';
 
 import 'support/test_accounts.dart';
@@ -135,6 +138,80 @@ class _TestAdministration extends AdminData {
   Future<Map<String, AdminRow>> workerDirectory() async => {
     'worker': {'full_name': 'Nur Hidayah', 'employee_id': 'EMP-CLEAN-11'},
   };
+
+  @override
+  Future<List<String>> workerJobRoles() async => ['Cleaner', 'Gardener'];
+
+  @override
+  Future<List<AdminRow>> workers({
+    String search = '',
+    int page = 0,
+    String? jobRole,
+  }) async => [
+    for (final (name, employee, role) in [
+      ('Nur Hidayah', 'EMP-CLEAN-11', 'Cleaner'),
+      ('Arvind Kumar', 'EMP-GARDEN-01', 'Gardener'),
+    ])
+      if ((jobRole == null || jobRole == role) &&
+          (name.contains(search) || employee.contains(search)))
+        {
+          'worker_id': employee,
+          'full_name': name,
+          'employee_id': employee,
+          'job_role': role,
+        },
+  ];
+}
+
+class _WorkforceProfileFixture extends _TestAdministration {
+  @override
+  SupabaseQueryBuilder table(String name) => _FixtureQuery(switch (name) {
+    'worker_profile' => [
+      {
+        'job_role': 'Cleaner',
+        'employment_status': 'active',
+        'current_workload': 0,
+        'daily_work_limit_minutes': 480,
+      },
+    ],
+    'worker_skill' ||
+    'worker_certification' ||
+    'worker_availability' ||
+    'preventive_work_order' ||
+    'preventive_work_completion' => [],
+    _ => throw ArgumentError.value(name),
+  });
+}
+
+class _FixtureQuery extends Fake implements SupabaseQueryBuilder {
+  _FixtureQuery(this.rows);
+
+  final PostgrestList rows;
+
+  @override
+  PostgrestFilterBuilder<PostgrestList> select([String columns = '*']) =>
+      _FixtureResponse(rows);
+}
+
+class _FixtureResponse<T> extends Fake implements PostgrestFilterBuilder<T> {
+  _FixtureResponse(this.result);
+
+  final T result;
+
+  @override
+  PostgrestTransformBuilder<PostgrestMap> single() =>
+      _FixtureResponse((result as PostgrestList).single);
+
+  @override
+  Future<U> then<U>(FutureOr<U> Function(T) onValue, {Function? onError}) =>
+      Future.value(result).then(onValue, onError: onError);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      switch (invocation.memberName) {
+        #eq || #gte || #gt || #lt || #isFilter || #order || #range => this,
+        _ => super.noSuchMethod(invocation),
+      };
 }
 
 Future<void> enterAdmin(
@@ -169,11 +246,142 @@ Future<void> enterAdmin(
 }
 
 void main() {
+  testWidgets('Workforce profile styles columns and illustrates an empty day', (
+    tester,
+  ) async {
+    await enterAdmin(
+      tester,
+      AccountRole.administrator,
+      data: _WorkforceProfileFixture(),
+    );
+    await tester.tap(find.text('Workforce management'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open profile').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Employment'), findsNothing);
+    final profileHeading = tester.widget<Text>(find.text('Worker profile'));
+    expect(profileHeading.style?.color, isNot(Colors.white));
+    final profileTable = tester.widget<DataTable>(
+      find.ancestor(
+        of: find.text('Job role'),
+        matching: find.byType(DataTable),
+      ),
+    );
+    expect(profileTable.headingRowColor?.resolve({}), Colors.black);
+    expect(profileTable.headingTextStyle?.color, Colors.white);
+
+    final skills = find.widgetWithText(AdminSectionCard, 'Skills');
+    final skillsTable = find.descendant(
+      of: skills,
+      matching: find.byType(DataTable),
+    );
+    expect(
+      find.descendant(of: skillsTable, matching: find.text('Name')),
+      findsOneWidget,
+    );
+    final skillColumns = tester.widget<DataTable>(skillsTable);
+    expect(skillColumns.headingRowColor?.resolve({}), Colors.black);
+    expect(skillColumns.headingTextStyle?.color, Colors.white);
+    expect(
+      find.widgetWithText(AdminIllustratedEmptyState, 'No Skill Added'),
+      findsOneWidget,
+    );
+
+    for (final label in ['Edit profile', 'Add Skill', 'Add Certifications']) {
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, label),
+      );
+      final style = button.style;
+      expect(style?.backgroundColor?.resolve({}), Colors.white);
+      expect(style?.foregroundColor?.resolve({}), Colors.black);
+      expect(
+        style?.backgroundColor?.resolve({WidgetState.hovered}),
+        Colors.black,
+      );
+      expect(
+        style?.foregroundColor?.resolve({WidgetState.hovered}),
+        Colors.white,
+      );
+    }
+
+    final previousMonth = find.byTooltip('Previous month');
+    await tester.ensureVisible(previousMonth);
+    final nextMonth = find.byTooltip('Next month');
+    final calendarCenter =
+        (tester.getCenter(previousMonth).dx + tester.getCenter(nextMonth).dx) /
+        2;
+    final availabilityCard = find.widgetWithText(
+      AdminSectionCard,
+      'Date availability',
+    );
+    expect(calendarCenter, closeTo(tester.getCenter(availabilityCard).dx, 1));
+
+    final day = find.descendant(of: availabilityCard, matching: find.text('1'));
+    await tester.ensureVisible(day);
+    await tester.tap(day);
+    await tester.pumpAndSettle();
+    final taskTable = tester.widget<DataTable>(
+      find.ancestor(of: find.text('Task'), matching: find.byType(DataTable)),
+    );
+    expect(taskTable.headingRowColor?.resolve({}), Colors.black);
+    expect(taskTable.headingTextStyle?.color, Colors.white);
+    expect(find.text('No assigned task for this date'), findsOneWidget);
+    final illustration = tester.widget<Image>(
+      find.descendant(
+        of: find.widgetWithText(
+          AdminIllustratedEmptyState,
+          'No assigned task for this date',
+        ),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (illustration.image as AssetImage).assetName,
+      'assets/workforce/no-assigned-task.png',
+    );
+  });
+
+  testWidgets('Workforce filters the directory by job role and search', (
+    tester,
+  ) async {
+    await enterAdmin(tester, AccountRole.administrator);
+    await tester.tap(find.text('Workforce management'));
+    await tester.pumpAndSettle();
+    final workforce = tester.widget<DataTable>(find.byType(DataTable));
+    expect(workforce.headingRowColor?.resolve({}), Colors.black);
+    expect(workforce.headingTextStyle?.color, Colors.white);
+    expect(find.widgetWithText(AdminCommandButton, 'Search'), findsOneWidget);
+    expect(find.text('Employment'), findsNothing);
+    expect(find.text('Nur Hidayah'), findsOneWidget);
+    expect(find.text('Arvind Kumar'), findsOneWidget);
+    await tester.tap(find.text('All job roles'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Cleaner'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nur Hidayah'), findsOneWidget);
+    expect(find.text('Arvind Kumar'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'EMP-GARDEN-01');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    expect(find.text('No matching workers.'), findsOneWidget);
+    await tester.tap(find.byType(AdminFilterMenu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(MenuItemButton, 'All job roles'));
+    await tester.pumpAndSettle();
+    expect(find.text('Arvind Kumar'), findsOneWidget);
+    expect(find.text('Nur Hidayah'), findsNothing);
+  });
+
   testWidgets('Administrator can open the overdue alert list', (tester) async {
     await enterAdmin(tester, AccountRole.administrator);
     expect(find.byType(Badge), findsOneWidget);
     await tester.tap(find.text('Overdue tasks'));
     await tester.pumpAndSettle();
+    final overdue = tester.widget<DataTable>(find.byType(DataTable));
+    expect(overdue.headingRowColor?.resolve({}), Colors.black);
+    expect(overdue.headingTextStyle?.color, Colors.white);
+    expect(find.widgetWithText(AdminCommandButton, 'Refresh'), findsOneWidget);
     expect(find.text('Toilet Cleaning'), findsOneWidget);
     expect(find.text('Nur Hidayah · EMP-CLEAN-11'), findsOneWidget);
     expect(find.text('Overdue'), findsOneWidget);
@@ -191,7 +399,7 @@ void main() {
     expect(find.text('Disabled Worker'), findsOneWidget);
     await tester.tap(find.text('All statuses'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Inactive').last);
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Inactive'));
     await tester.pumpAndSettle();
     expect(find.text('Enabled Worker'), findsNothing);
     expect(find.text('Disabled Worker'), findsOneWidget);
@@ -202,11 +410,28 @@ void main() {
     (tester) async {
       await enterAdmin(tester, AccountRole.administrator);
       expect(find.text('Worker accounts'), findsOneWidget);
+      expect(
+        find.widgetWithText(AdminCommandButton, 'Create worker'),
+        findsOneWidget,
+      );
+      final accountsTable = tester.widget<DataTable>(find.byType(DataTable));
+      expect(accountsTable.headingRowColor?.resolve({}), Colors.black);
+      expect(accountsTable.headingTextStyle?.color, Colors.white);
+      final accountsCard = tester.widget<Card>(
+        find.ancestor(of: find.byType(DataTable), matching: find.byType(Card)),
+      );
+      expect(accountsCard.elevation, greaterThan(1));
       expect(tester.getSize(find.byType(Scaffold)).width, 1440);
       final route = ModalRoute.of(tester.element(find.text('Worker accounts')));
       expect(route?.settings.name, '/admin');
       await tester.tap(find.text('Create worker'));
       await tester.pumpAndSettle();
+      final dialogContext = tester.element(find.byType(AlertDialog));
+      expect(DialogTheme.of(dialogContext).elevation, 28);
+      expect(
+        DialogTheme.of(dialogContext).shadowColor,
+        const Color(0xA6142234),
+      );
       final fields = find.byType(TextFormField);
       await tester.enterText(fields.at(0), 'Sample Worker');
       await tester.enterText(fields.at(1), 'SAMPLE-1');
@@ -215,8 +440,16 @@ void main() {
       await tester.tap(find.text('Create account'));
       await tester.pumpAndSettle();
       expect(find.text('Sample Worker'), findsOneWidget);
+      expect(find.text('SW'), findsOneWidget);
+      expect(
+        tester.getCenter(find.text('SW')).dx,
+        lessThan(tester.getCenter(find.text('Sample Worker')).dx),
+      );
       await tester.tap(find.text('Facilities').first);
       await tester.pumpAndSettle();
+      final facilitiesTable = tester.widget<DataTable>(find.byType(DataTable));
+      expect(facilitiesTable.headingRowColor?.resolve({}), Colors.black);
+      expect(facilitiesTable.headingTextStyle?.color, Colors.white);
       expect(find.text('Zone'), findsNothing);
       expect(find.text('Other locations'), findsNothing);
       expect(find.text('View'), findsNothing);

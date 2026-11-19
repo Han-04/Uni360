@@ -361,10 +361,15 @@ class _FacilityPageState extends State<_FacilityPage> {
                 onPressed: () => setState(() => schedule = parent),
                 child: const Text('Schedules for this location'),
               ),
-            if (currentType != 'asset')
+            if (parent == null)
+              AdminCommandButton(
+                label: 'Create facility',
+                onPressed: () => edit(rows),
+              )
+            else if (currentType != 'asset')
               FilledButton(
                 onPressed: () => edit(rows, parent: parent),
-                child: Text(parent == null ? 'Create facility' : childLabel),
+                child: Text(childLabel),
               ),
           ],
         ),
@@ -383,6 +388,7 @@ class _FacilityPageState extends State<_FacilityPage> {
               ],
             ],
             empty: 'No property details.',
+            darkHeading: true,
           )
         else ...[
           AdminSearch(
@@ -417,6 +423,7 @@ class _FacilityPageState extends State<_FacilityPage> {
                 ],
             ],
             empty: 'No matching facilities.',
+            darkHeading: true,
           ),
           if (page > 0 || entries.length > 25)
             AdminPager(
@@ -696,15 +703,15 @@ class _AdminTaskTemplatesState extends State<AdminTaskTemplates> {
             subtitle:
                 'Manage templates, recurring times and worker assignments.',
             actions: [
-              OutlinedButton(
+              AdminCommandButton(
+                label: 'Review auto schedule',
                 onPressed: () => setState(() => reviewing = true),
-                child: const Text('Review auto schedule'),
               ),
-              FilledButton(
+              AdminCommandButton(
+                label: 'Create Task Check List',
                 onPressed: zones.isNotEmpty || widget.superAdmin
                     ? () => edit(zones)
                     : null,
-                child: const Text('Create task template'),
               ),
             ],
           ),
@@ -758,6 +765,7 @@ class _AdminTaskTemplatesState extends State<AdminTaskTemplates> {
                 ],
             ],
             empty: 'No matching task templates.',
+            darkHeading: true,
           ),
           AdminPager(
             page: page,
