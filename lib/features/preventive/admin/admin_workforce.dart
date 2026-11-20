@@ -98,9 +98,10 @@ class _AdminWorkforceState extends State<AdminWorkforce> {
                       adminCell(row['full_name']),
                       adminCell(row['employee_id']),
                       adminCell(row['job_role']),
-                      adminAction(
-                        'Open profile',
-                        () => setState(() => worker = row),
+                      AdminCommandButton(
+                        label: 'Open profile',
+                        icon: Icons.account_circle_outlined,
+                        onPressed: () => setState(() => worker = row),
                       ),
                     ],
                 ],
@@ -530,10 +531,7 @@ class _WorkerProfileState extends State<_WorkerProfile> {
                 empty: 'No Skill Added',
                 framed: false,
                 darkHeading: true,
-                emptyState: const AdminIllustratedEmptyState(
-                  'No Skill Added',
-                  asset: 'assets/workforce/empty-workforce-box.png',
-                ),
+                emptyIllustration: 'assets/workforce/empty-workforce-box.png',
               ),
             ),
             const SizedBox(height: 16),
@@ -573,10 +571,7 @@ class _WorkerProfileState extends State<_WorkerProfile> {
                 empty: 'No Certification Added',
                 framed: false,
                 darkHeading: true,
-                emptyState: const AdminIllustratedEmptyState(
-                  'No Certification Added',
-                  asset: 'assets/workforce/empty-workforce-box.png',
-                ),
+                emptyIllustration: 'assets/workforce/empty-workforce-box.png',
               ),
             ),
           ],

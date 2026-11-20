@@ -417,10 +417,8 @@ class _AdminAvailabilityState extends State<AdminAvailability> {
                           ],
                       ],
                       empty: _noAssignedTasksMessage,
-                      emptyState: const AdminIllustratedEmptyState(
-                        _noAssignedTasksMessage,
-                        asset: 'assets/workforce/no-assigned-task.png',
-                      ),
+                      emptyIllustration:
+                          'assets/workforce/no-assigned-task.png',
                       darkHeading: true,
                     ),
                     retry: () => showDay(selected),

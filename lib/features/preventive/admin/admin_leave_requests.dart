@@ -163,7 +163,10 @@ class _AdminLeaveRequestsState extends State<AdminLeaveRequests> {
                     ]),
                   ],
               ],
-              empty: 'No leave requests match this status.',
+              empty: _filter == null
+                  ? 'No leave requests.'
+                  : 'No $_filter leave requests.',
+              emptyIllustration: adminEmptyTasksAsset,
               darkHeading: true,
             ),
             AdminPager(

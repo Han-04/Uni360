@@ -1,9 +1,62 @@
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:uni360/features/preventive/admin/admin_filter_menu.dart';
+import 'package:uni360/features/preventive/admin/admin_widgets.dart';
 
 void main() {
+  testWidgets('Admin command fills from the pointer after the delay', (
+    tester,
+  ) async {
+    var pressed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: AdminCommandButton(
+              label: 'Create worker',
+              icon: Icons.add,
+              onPressed: () => pressed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    final button = find.byType(FilledButton);
+    final fill = find.descendant(of: button, matching: find.byType(ClipPath));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(20, 20));
+    final topLeft = tester.getTopLeft(button);
+    await mouse.moveTo(topLeft + const Offset(38, 22));
+    await tester.pump(const Duration(milliseconds: 60));
+    final pointer = topLeft + const Offset(5, 25);
+    await mouse.moveTo(pointer);
+    await tester.pump(const Duration(milliseconds: 45));
+    expect(fill, findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(fill, findsOneWidget);
+    final paintedSize = tester.getSize(fill);
+    final clip = tester.widget<ClipPath>(fill).clipper!.getClip(paintedSize);
+    final paintedOrigin = tester.getTopLeft(fill) + clip.getBounds().center;
+    expect((paintedOrigin - pointer).distance, lessThan(.01));
+    expect(
+      clip.contains(Offset(paintedSize.width - 1, paintedSize.height / 2)),
+      isFalse,
+    );
+    final filledLabel = find.descendant(
+      of: fill,
+      matching: find.text('Create worker'),
+    );
+    expect(tester.widget<Text>(filledLabel).style?.color, Colors.white);
+
+    await tester.tapAt(pointer);
+    expect(pressed, isTrue);
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+    expect(fill, findsNothing);
+  });
+
   testWidgets('Filter hover waits and expands from the pointer', (
     tester,
   ) async {

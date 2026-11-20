@@ -282,10 +282,14 @@ class _AdminFacilitySchedulesState extends State<AdminFacilitySchedules> {
                     adminCell(_localTime(slot['local_time'])),
                     adminCell(slot['starts_on']),
                     adminCell(slot['ends_on']),
-                    adminActions([
+                    adminCommandRow([
                       if (active && slot['template']['is_active'] == true)
-                        adminAction('Edit', () => edit(templates, slot)),
-                      adminAction('Deactivate', () => _deactivateRecord(slot)),
+                        AdminCommandButton.edit(
+                          onPressed: () => edit(templates, slot),
+                        ),
+                      AdminCommandButton.deactivate(
+                        onPressed: () => _deactivateRecord(slot),
+                      ),
                     ]),
                   ],
               ],

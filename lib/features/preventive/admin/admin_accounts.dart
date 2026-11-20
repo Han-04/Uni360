@@ -188,11 +188,14 @@ class _AdminAccountsState extends State<AdminAccounts> {
                       ),
                     adminCell(row['employee_id']),
                     adminCell(row['phone']),
-                    adminCell(row['is_active'] == true ? 'Active' : 'Inactive'),
-                    adminActions([
-                      adminAction('Edit', () => edit(row)),
+                    AdminStatusBadge(active: row['is_active'] == true),
+                    adminCommandRow([
+                      AdminCommandButton.edit(onPressed: () => edit(row)),
                       if (row['is_active'] == true)
-                        adminAction('Deactivate', () => _deactivateRecord(row)),
+                        AdminCommandButton.deactivate(
+                          icon: Icons.person_off_outlined,
+                          onPressed: () => _deactivateRecord(row),
+                        ),
                     ]),
                   ],
               ],

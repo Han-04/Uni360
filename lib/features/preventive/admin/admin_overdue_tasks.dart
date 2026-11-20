@@ -53,6 +53,7 @@ class _AdminOverdueTasksState extends State<AdminOverdueTasks> {
                   ],
               ],
               empty: 'No overdue tasks.',
+              emptyIllustration: adminEmptyTasksAsset,
               darkHeading: true,
             ),
             AdminPager(
