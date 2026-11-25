@@ -206,6 +206,7 @@ class _TaskCalendarState extends State<_TaskCalendar> {
               empty: search.isEmpty
                   ? 'No assignments for this date.'
                   : 'No assignments match that worker name.',
+              darkHeading: true,
             ),
             if (page > 0 || matching.length > 20)
               AdminPager(

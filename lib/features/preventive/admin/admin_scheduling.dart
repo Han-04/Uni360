@@ -282,14 +282,19 @@ class _AdminFacilitySchedulesState extends State<AdminFacilitySchedules> {
                     adminCell(_localTime(slot['local_time'])),
                     adminCell(slot['starts_on']),
                     adminCell(slot['ends_on']),
-                    adminActions([
+                    adminCommandRow([
                       if (active && slot['template']['is_active'] == true)
-                        adminAction('Edit', () => edit(templates, slot)),
-                      adminAction('Deactivate', () => _deactivateRecord(slot)),
+                        AdminCommandButton.edit(
+                          onPressed: () => edit(templates, slot),
+                        ),
+                      AdminCommandButton.deactivate(
+                        onPressed: () => _deactivateRecord(slot),
+                      ),
                     ]),
                   ],
               ],
               empty: 'No task schedules for this facility.',
+              darkHeading: true,
             ),
           ],
         );
@@ -699,6 +704,7 @@ class _ScheduledTasksState extends State<_ScheduledTasks> {
                   ],
               ],
               empty: 'No scheduled assignments match these filters.',
+              darkHeading: true,
             ),
             AdminPager(
               page: page,
@@ -774,6 +780,7 @@ class _ScheduleDraftState extends State<_ScheduleDraft> {
                 ],
             ],
             empty: 'No duplicates.',
+            darkHeading: true,
           ),
           CheckboxListTile(
             value: verified,
@@ -833,6 +840,7 @@ class _ScheduleDraftState extends State<_ScheduleDraft> {
               ],
           ],
           empty: 'No outstanding tasks match this schedule.',
+          darkHeading: true,
         ),
         if (workloads.keys.map((key) => key.$2).toSet().length > 1) ...[
           const AdminHeading('Work added across this period'),
@@ -847,6 +855,7 @@ class _ScheduleDraftState extends State<_ScheduleDraft> {
                 ],
             ],
             empty: 'No assignments.',
+            darkHeading: true,
           ),
         ],
         if (workloads.isNotEmpty) ...[
@@ -876,6 +885,7 @@ class _ScheduleDraftState extends State<_ScheduleDraft> {
                 ],
             ],
             empty: 'No assignments.',
+            darkHeading: true,
           ),
         ],
       ],

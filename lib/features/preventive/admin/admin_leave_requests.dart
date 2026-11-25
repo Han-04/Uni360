@@ -108,22 +108,19 @@ class _AdminLeaveRequestsState extends State<AdminLeaveRequests> {
       AdminHeading(
         'Leave requests',
         subtitle: 'Review worker leave and check task coverage.',
-        actions: [
-          OutlinedButton(onPressed: _reload, child: const Text('Refresh')),
-        ],
+        actions: [AdminCommandButton(label: 'Refresh', onPressed: _reload)],
       ),
       SizedBox(
         width: 280,
-        child: DropdownButtonFormField<String>(
-          initialValue: _filter ?? '',
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Status'),
-          items: const [
-            DropdownMenuItem(value: '', child: Text('All requests')),
-            DropdownMenuItem(value: 'pending', child: Text('Pending')),
-            DropdownMenuItem(value: 'approved', child: Text('Approved')),
-            DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
-          ],
+        child: AdminFilterMenu(
+          label: 'Status',
+          value: _filter ?? '',
+          options: const {
+            '': 'All requests',
+            'pending': 'Pending',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+          },
           onChanged: (filter) {
             _filter = filter == '' ? null : filter;
             _page = 0;
@@ -166,7 +163,11 @@ class _AdminLeaveRequestsState extends State<AdminLeaveRequests> {
                     ]),
                   ],
               ],
-              empty: 'No leave requests match this status.',
+              empty: _filter == null
+                  ? 'No leave requests.'
+                  : 'No $_filter leave requests.',
+              emptyIllustration: adminEmptyTasksAsset,
+              darkHeading: true,
             ),
             AdminPager(
               page: _page,

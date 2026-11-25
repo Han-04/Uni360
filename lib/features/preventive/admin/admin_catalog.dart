@@ -329,8 +329,7 @@ class _FacilityPageState extends State<_FacilityPage> {
       );
     }
     final currentType = parent?['facility_type'];
-    final childLabel =
-        _addLabels[_childTypes[currentType]] ?? 'Add sub-location';
+    final childType = _childTypes[currentType];
     final entries = matches(rows, parent?['id'] as String?);
     final start = page * 25;
     final visible = entries.skip(start).take(25);
@@ -357,14 +356,26 @@ class _FacilityPageState extends State<_FacilityPage> {
           },
           actions: [
             if (parent != null)
-              OutlinedButton(
+              AdminCommandButton(
+                label: 'Schedules for this location',
+                icon: Icons.calendar_month_outlined,
                 onPressed: () => setState(() => schedule = parent),
-                child: const Text('Schedules for this location'),
               ),
-            if (currentType != 'asset')
-              FilledButton(
+            if (parent == null)
+              AdminCommandButton(
+                label: 'Create facility',
+                onPressed: () => edit(rows),
+              )
+            else if (currentType != 'asset')
+              AdminCommandButton(
+                label: _addLabels[childType] ?? 'Add sub-location',
+                icon: switch (childType) {
+                  'floor' => Icons.layers_outlined,
+                  'room' => Icons.meeting_room_outlined,
+                  'asset' => Icons.inventory_2_outlined,
+                  _ => null,
+                },
                 onPressed: () => edit(rows, parent: parent),
-                child: Text(parent == null ? 'Create facility' : childLabel),
               ),
           ],
         ),
@@ -374,15 +385,20 @@ class _FacilityPageState extends State<_FacilityPage> {
             [
               [
                 adminCell(_facilityTypeLabel(parent!)),
-                adminCell(statusOf(parent)),
-                adminActions([
-                  adminAction('Edit', () => edit(rows, row: parent)),
+                _facilityStatusBadge(parent),
+                adminCommandRow([
+                  AdminCommandButton.edit(
+                    onPressed: () => edit(rows, row: parent),
+                  ),
                   if (parent['is_active'] == true)
-                    adminAction('Deactivate', () => _deactivateRecord(parent)),
+                    AdminCommandButton.deactivate(
+                      onPressed: () => _deactivateRecord(parent),
+                    ),
                 ]),
               ],
             ],
             empty: 'No property details.',
+            darkHeading: true,
           )
         else ...[
           AdminSearch(
@@ -404,19 +420,33 @@ class _FacilityPageState extends State<_FacilityPage> {
                     () => widget.open(row['id'] as String),
                   ),
                   adminCell(_facilityTypeLabel(row)),
-                  adminCell(statusOf(row)),
-                  adminActions([
-                    adminAction('Edit', () => edit(rows, row: row)),
-                    adminAction(
-                      'Schedules',
-                      () => setState(() => schedule = row),
+                  _facilityStatusBadge(row),
+                  adminCommandRow([
+                    AdminCommandButton.edit(
+                      onPressed: () => edit(rows, row: row),
+                    ),
+                    AdminCommandButton(
+                      label: 'Schedules',
+                      icon: Icons.calendar_month_outlined,
+                      onPressed: () => setState(() => schedule = row),
                     ),
                     if (row['is_active'] == true)
-                      adminAction('Deactivate', () => _deactivateRecord(row)),
+                      AdminCommandButton.deactivate(
+                        onPressed: () => _deactivateRecord(row),
+                      ),
                   ]),
                 ],
             ],
-            empty: 'No matching facilities.',
+            empty: search.isNotEmpty
+                ? 'No locations match your search.'
+                : switch (currentType) {
+                    'building' => 'No levels added yet.',
+                    'floor' => 'No rooms added yet.',
+                    'room' => 'No properties added yet.',
+                    _ => 'No facilities added yet.',
+                  },
+            emptyIllustration: 'assets/facilities/empty-locations.png',
+            darkHeading: true,
           ),
           if (page > 0 || entries.length > 25)
             AdminPager(
@@ -429,11 +459,10 @@ class _FacilityPageState extends State<_FacilityPage> {
     );
   }
 
-  String statusOf(AdminRow row) => row['is_active'] != true
-      ? 'Inactive'
-      : row['effective_active'] == true
-      ? 'Active'
-      : 'Parent inactive';
+  AdminStatusBadge _facilityStatusBadge(AdminRow row) => AdminStatusBadge(
+    active: row['is_active'] == true && row['effective_active'] == true,
+    inactiveLabel: row['is_active'] == true ? 'Parent inactive' : 'Inactive',
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -696,15 +725,15 @@ class _AdminTaskTemplatesState extends State<AdminTaskTemplates> {
             subtitle:
                 'Manage templates, recurring times and worker assignments.',
             actions: [
-              OutlinedButton(
+              AdminCommandButton(
+                label: 'Review auto schedule',
                 onPressed: () => setState(() => reviewing = true),
-                child: const Text('Review auto schedule'),
               ),
-              FilledButton(
+              AdminCommandButton(
+                label: 'Create Task Check List',
                 onPressed: zones.isNotEmpty || widget.superAdmin
                     ? () => edit(zones)
                     : null,
-                child: const Text('Create task template'),
               ),
             ],
           ),
@@ -719,45 +748,52 @@ class _AdminTaskTemplatesState extends State<AdminTaskTemplates> {
             initial: search,
           ),
           AdminTable(
-            ['Title', 'Category', 'Zone', 'Status', 'Actions'],
+            ['Title', 'Category', 'Status', 'Actions'],
             [
               for (final row in rows.take(25))
                 [
                   adminCell(row['title']),
                   adminCell(taskCategory(row)),
-                  adminCell(
-                    row['zone_id'] == null
-                        ? 'Campus-wide'
-                        : zones[row['zone_id']] ?? 'Assigned zone',
-                  ),
-                  adminCell(row['is_active'] == true ? 'Active' : 'Inactive'),
-                  adminActions([
-                    adminAction(
-                      'View',
-                      () => adminDetails(context, row['title'] as String, [
-                        Text(taskCategory(row)),
-                        Text(row['instructions'] as String),
-                        Text('Work time · ${row['duration_minutes']} min'),
-                        Text(
-                          'Required job role · ${row['required_job_role'] ?? "Any"}',
-                        ),
-                        for (final item
-                            in (row['checklist'] as List).cast<String>())
-                          Text('• $item'),
-                      ]),
-                    ),
-                    adminAction('Edit', () => edit(zones, row)),
-                    if (row['is_active'] == true) ...[
-                      adminAction(
-                        'Schedule',
-                        () => setState(() => template = row),
+                  AdminStatusBadge(active: row['is_active'] == true),
+                  adminCommandRow([
+                    AdminCommandButton(
+                      label: 'View',
+                      icon: Icons.visibility_outlined,
+                      onPressed: () => adminDetails(
+                        context,
+                        row['title'] as String,
+                        [
+                          Text(taskCategory(row)),
+                          Text(row['instructions'] as String),
+                          Text('Work time · ${row['duration_minutes']} min'),
+                          Text(
+                            'Required job role · ${row['required_job_role'] ?? "Any"}',
+                          ),
+                          for (final item
+                              in (row['checklist'] as List).cast<String>())
+                            Text('• $item'),
+                        ],
                       ),
-                      adminAction('Deactivate', () => _deactivateRecord(row)),
+                    ),
+                    AdminCommandButton.edit(onPressed: () => edit(zones, row)),
+                    if (row['is_active'] == true) ...[
+                      AdminCommandButton(
+                        label: 'Schedule',
+                        icon: Icons.event_available_outlined,
+                        onPressed: () => setState(() => template = row),
+                      ),
+                      AdminCommandButton.deactivate(
+                        onPressed: () => _deactivateRecord(row),
+                      ),
                     ],
                   ]),
                 ],
             ],
-            empty: 'No matching task templates.',
+            empty: search.isEmpty
+                ? 'No task templates yet.'
+                : 'No task templates match your search.',
+            emptyIllustration: adminEmptyTasksAsset,
+            darkHeading: true,
           ),
           AdminPager(
             page: page,

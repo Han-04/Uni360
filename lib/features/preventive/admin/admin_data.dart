@@ -32,7 +32,7 @@ class AdminData {
 
   Future<AdminRow> accounts(String action, AdminRow values) async {
     if (action == 'list') {
-      return await client.rpc(
+      final result = await client.rpc<AdminRow>(
         'list_managed_accounts',
         params: {
           'search_text': values['search'],
@@ -43,7 +43,33 @@ class AdminData {
             _ => null,
           },
         },
-      ) as AdminRow;
+      );
+      final rows = adminRows(result['rows']);
+      final paths = {
+        for (final row in rows)
+          if (row['profile_photo_path'] case final String path) path,
+      };
+      if (paths.isEmpty) return result;
+
+      try {
+        final signed = await client.storage
+            .from('account-photos')
+            .createSignedUrlsResult(paths.toList(), 300);
+        final urls = {
+          for (final url in signed.whereType<SignedUrlSuccess>())
+            url.path: url.signedUrl,
+        };
+        return {
+          ...result,
+          'rows': [
+            for (final row in rows)
+              {...row, 'profile_photo_url': urls[row['profile_photo_path']]},
+          ],
+        };
+      } on StorageException {
+        // The account list can still show initials if photos are unavailable.
+        return result;
+      }
     }
     try {
       final response = await client.functions.invoke(
@@ -176,18 +202,39 @@ class AdminData {
         ),
       );
 
-  Future<List<AdminRow>> workers([String search = '', int page = 0]) async =>
-      adminRows(
-        await client.rpc(
-          'workforce_directory',
-          params: {'search_text': search, 'start_at': page * 25},
-        ),
-      );
+  Future<List<AdminRow>> workers({
+    String search = '',
+    int page = 0,
+    String? jobRole,
+  }) async => adminRows(
+    await client.rpc(
+      'workforce_directory',
+      params: {
+        'search_text': search,
+        'start_at': page * 25,
+        'job_role_filter': jobRole,
+      },
+    ),
+  );
+
+  Future<List<String>> workerJobRoles() async =>
+      (await client.rpc<List<dynamic>>('workforce_job_roles')).cast<String>();
+
+  Future<String?> workerPhotoUrl(String? path) async {
+    if (path == null) return null;
+    try {
+      return await client.storage
+          .from('account-photos')
+          .createSignedUrl(path, 300);
+    } on StorageException {
+      return null;
+    }
+  }
 
   Future<Map<String, AdminRow>> workerDirectory() async {
     final result = <String, AdminRow>{};
     for (var page = 0; ; page++) {
-      final batch = await workers('', page);
+      final batch = await workers(page: page);
       for (final worker in batch.take(25)) {
         result[worker['worker_id'] as String] = worker;
       }

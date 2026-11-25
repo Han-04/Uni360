@@ -13,6 +13,7 @@ import '../account.dart';
 import '../account_controller.dart';
 import '../account_repository.dart';
 import '../supabase_account_repository.dart';
+import 'profile_avatar.dart';
 
 class AccountProfileScreen extends StatelessWidget {
   const AccountProfileScreen({
@@ -291,48 +292,12 @@ class _AccountAvatarState extends State<AccountAvatar> {
   @override
   Widget build(BuildContext context) => FutureBuilder(
     future: _url,
-    builder: (context, snapshot) {
-      final fallback = Center(
-        child: Text(
-          widget.profile.name
-              .trim()
-              .split(RegExp(r'\s+'))
-              .take(2)
-              .where((part) => part.isNotEmpty)
-              .map((part) => part.characters.first)
-              .join()
-              .toUpperCase(),
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: widget.dimension * .35,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-      final preview = widget.preview;
-      final url = snapshot.data;
-      return ClipOval(
-        child: ColoredBox(
-          color: Theme.of(context).colorScheme.primary,
-          child: SizedBox.square(
-            dimension: widget.dimension,
-            child: preview != null
-                ? Image.memory(
-                    preview,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => fallback,
-                  )
-                : url != null
-                ? Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => fallback,
-                  )
-                : fallback,
-          ),
-        ),
-      );
-    },
+    builder: (context, snapshot) => ProfileAvatar(
+      name: widget.profile.name,
+      dimension: widget.dimension,
+      preview: widget.preview,
+      photoUrl: snapshot.data,
+    ),
   );
 }
 

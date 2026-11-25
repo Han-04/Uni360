@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/account/presentation/profile_avatar.dart';
 import 'admin_data.dart';
 import 'admin_widgets.dart';
 
@@ -116,10 +117,10 @@ class _AdminAccountsState extends State<AdminAccounts> {
         '$role accounts',
         subtitle: 'Create, update and deactivate ${role.toLowerCase()} access.',
         actions: [
-          FilledButton.icon(
+          AdminCommandButton(
             onPressed: edit,
-            icon: const Icon(Icons.add),
-            label: Text('Create ${role.toLowerCase()}'),
+            icon: Icons.add,
+            label: 'Create ${role.toLowerCase()}',
           ),
         ],
       ),
@@ -140,21 +141,16 @@ class _AdminAccountsState extends State<AdminAccounts> {
           ),
           SizedBox(
             width: 180,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey(status),
-              initialValue: status,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Status'),
-              items: const [
-                DropdownMenuItem(
-                  value: 'all',
-                  child: Text('All statuses', overflow: TextOverflow.ellipsis),
-                ),
-                DropdownMenuItem(value: 'active', child: Text('Active')),
-                DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
-              ],
+            child: AdminFilterMenu(
+              label: 'Status',
+              value: status,
+              options: const {
+                'all': 'All statuses',
+                'active': 'Active',
+                'inactive': 'Inactive',
+              },
               onChanged: (value) {
-                if (value == null || value == status) return;
+                if (value == status) return;
                 status = value;
                 page = 0;
                 reload();
@@ -173,18 +169,38 @@ class _AdminAccountsState extends State<AdminAccounts> {
               [
                 for (final row in adminRows(result['rows']))
                   [
-                    adminCell(row['full_name']),
+                    if (widget.superAdmin)
+                      adminCell(row['full_name'])
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ExcludeSemantics(
+                            child: ProfileAvatar(
+                              name: row['full_name'] as String,
+                              dimension: 36,
+                              photoUrl: row['profile_photo_url'] as String?,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Flexible(child: adminCell(row['full_name'])),
+                        ],
+                      ),
                     adminCell(row['employee_id']),
                     adminCell(row['phone']),
-                    adminCell(row['is_active'] == true ? 'Active' : 'Inactive'),
-                    adminActions([
-                      adminAction('Edit', () => edit(row)),
+                    AdminStatusBadge(active: row['is_active'] == true),
+                    adminCommandRow([
+                      AdminCommandButton.edit(onPressed: () => edit(row)),
                       if (row['is_active'] == true)
-                        adminAction('Deactivate', () => _deactivateRecord(row)),
+                        AdminCommandButton.deactivate(
+                          icon: Icons.person_off_outlined,
+                          onPressed: () => _deactivateRecord(row),
+                        ),
                     ]),
                   ],
               ],
               empty: 'No matching accounts.',
+              darkHeading: true,
             ),
             AdminPager(
               page: page,

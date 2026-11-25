@@ -33,9 +33,7 @@ class _AdminOverdueTasksState extends State<AdminOverdueTasks> {
       AdminHeading(
         'Overdue tasks',
         subtitle: 'Assigned work left unfinished after its scheduled day in Malaysia.',
-        actions: [
-          OutlinedButton(onPressed: reload, child: const Text('Refresh')),
-        ],
+        actions: [AdminCommandButton(label: 'Refresh', onPressed: reload)],
       ),
       AdminLoad(listing, (result) {
         final (orders, workers) = result;
@@ -55,6 +53,8 @@ class _AdminOverdueTasksState extends State<AdminOverdueTasks> {
                   ],
               ],
               empty: 'No overdue tasks.',
+              emptyIllustration: adminEmptyTasksAsset,
+              darkHeading: true,
             ),
             AdminPager(
               page: page,

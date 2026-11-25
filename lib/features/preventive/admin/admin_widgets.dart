@@ -4,6 +4,13 @@ import '../../../core/widgets/curved_back_button.dart';
 
 import '../../../core/theme/app_theme.dart';
 import 'admin_data.dart';
+import 'pointer_hover_fill.dart';
+
+export 'admin_filter_menu.dart';
+
+const _tableCardElevation = 5.0;
+const _tableCardShadow = Color(0x52172940);
+const adminEmptyTasksAsset = 'assets/tasks/empty-tasks.png';
 
 class AdminHeading extends StatelessWidget {
   const AdminHeading(
@@ -76,33 +83,46 @@ class AdminLoad<T> extends StatelessWidget {
 }
 
 class AdminTable extends StatelessWidget {
-  const AdminTable(this.headers, this.rows, {super.key, required this.empty});
+  const AdminTable(
+    this.headers,
+    this.rows, {
+    super.key,
+    required this.empty,
+    this.framed = true,
+    this.darkHeading = false,
+    this.emptyIllustration,
+  });
   final List<String> headers;
   final List<List<Widget>> rows;
   final String empty;
+  final bool framed;
+  final bool darkHeading;
+  final String? emptyIllustration;
 
   @override
-  Widget build(BuildContext context) => Card(
-    color: Colors.white,
-    margin: const EdgeInsets.symmetric(vertical: 8),
-    clipBehavior: Clip.antiAlias,
-    child: LayoutBuilder(
+  Widget build(BuildContext context) {
+    final illustration = rows.isEmpty ? emptyIllustration : null;
+    final table = LayoutBuilder(
       builder: (context, size) {
         return SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: size.maxWidth),
             child: DataTable(
-              headingRowColor: const WidgetStatePropertyAll(
-                AppColors.background,
+              headingRowColor: WidgetStatePropertyAll(
+                darkHeading ? Colors.black : AppColors.background,
               ),
+              headingTextStyle: darkHeading
+                  ? Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(color: Colors.white)
+                  : null,
               dataRowMinHeight: 56,
               dataRowMaxHeight: 78,
               columns: [
                 for (final name in headers) DataColumn(label: Text(name)),
               ],
               rows: [
-                if (rows.isEmpty)
+                if (rows.isEmpty && illustration == null)
                   DataRow(
                     cells: [
                       DataCell(Text(empty)),
@@ -117,6 +137,85 @@ class AdminTable extends StatelessWidget {
           ),
         );
       },
+    );
+    final content = illustration == null
+        ? table
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              table,
+              AdminIllustratedEmptyState(empty, asset: illustration),
+            ],
+          );
+    return framed
+        ? Card(
+            color: Colors.white,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            elevation: darkHeading ? _tableCardElevation : null,
+            shadowColor: darkHeading ? _tableCardShadow : null,
+            clipBehavior: Clip.antiAlias,
+            child: content,
+          )
+        : content;
+  }
+}
+
+class AdminSectionCard extends StatelessWidget {
+  const AdminSectionCard(
+    this.title, {
+    super.key,
+    this.subtitle,
+    this.actions = const [],
+    required this.child,
+  });
+
+  final String title;
+  final String? subtitle;
+  final List<Widget> actions;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      AdminHeading(title, subtitle: subtitle, actions: actions),
+      Card(
+        color: Colors.white,
+        margin: EdgeInsets.zero,
+        elevation: _tableCardElevation,
+        shadowColor: _tableCardShadow,
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    ],
+  );
+}
+
+class AdminIllustratedEmptyState extends StatelessWidget {
+  const AdminIllustratedEmptyState(
+    this.message, {
+    super.key,
+    required this.asset,
+  });
+
+  final String message;
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      children: [
+        Image.asset(
+          asset,
+          width: 160,
+          height: 104,
+          fit: BoxFit.contain,
+          excludeFromSemantics: true,
+        ),
+        const SizedBox(height: 8),
+        Text(message, style: Theme.of(context).textTheme.titleSmall),
+      ],
     ),
   );
 }
@@ -133,8 +232,112 @@ Widget adminCell(Object? value) => ConstrainedBox(
 Widget adminActions(List<Widget> children) =>
     Wrap(spacing: 2, runSpacing: 2, children: children);
 
+Widget adminCommandRow(List<Widget> children) =>
+    Row(mainAxisSize: MainAxisSize.min, spacing: 8, children: children);
+
 Widget adminAction(String label, VoidCallback onTap) =>
     TextButton(onPressed: onTap, child: Text(label));
+
+class AdminStatusBadge extends StatelessWidget {
+  const AdminStatusBadge({
+    super.key,
+    required this.active,
+    this.inactiveLabel = 'Inactive',
+  });
+
+  final bool active;
+  final String inactiveLabel;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: active ? const Color(0xFFE0F3E8) : const Color(0xFFEDEFF3),
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: Text(
+        active ? 'Active' : inactiveLabel,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          color: active ? const Color(0xFF17633B) : const Color(0xFF475569),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ),
+  );
+}
+
+class AdminCommandButton extends StatelessWidget {
+  const AdminCommandButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+  });
+
+  const AdminCommandButton.edit({super.key, required this.onPressed})
+    : label = 'Edit',
+      icon = Icons.edit_outlined;
+
+  const AdminCommandButton.deactivate({
+    super.key,
+    required this.onPressed,
+    this.icon = Icons.block_outlined,
+  }) : label = 'Deactivate';
+
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+
+  static const _disabledForeground = Color(0xFF666666);
+  static final _style =
+      FilledButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        disabledBackgroundColor: const Color(0xFFF0F0F0),
+        disabledForegroundColor: _disabledForeground,
+        side: const BorderSide(color: Colors.black26),
+        padding: EdgeInsets.zero,
+      ).copyWith(
+        overlayColor: const WidgetStateProperty<Color?>.fromMap({
+          WidgetState.pressed: Colors.black12,
+          WidgetState.focused: Colors.black12,
+          WidgetState.any: Colors.transparent,
+        }),
+      );
+
+  Widget _content(Color color) => Padding(
+    padding: icon == null
+        ? const EdgeInsets.symmetric(horizontal: 24, vertical: 8)
+        : const EdgeInsetsDirectional.fromSTEB(16, 8, 24, 8),
+    child: Center(
+      widthFactor: 1,
+      heightFactor: 1,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon case final symbol?) ...[
+            Icon(symbol, color: color, size: 18),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Text(label, style: TextStyle(color: color)),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => FilledButton(
+    onPressed: onPressed,
+    style: _style,
+    clipBehavior: Clip.antiAlias,
+    child: onPressed == null
+        ? _content(_disabledForeground)
+        : PointerHoverFill(minHeight: 52, content: _content),
+  );
+}
 
 Widget adminBackAction(String label, VoidCallback onTap) => TextButton.icon(
   onPressed: onTap,
@@ -206,9 +409,9 @@ class _AdminSearchState extends State<AdminSearch> {
           onSubmitted: (value) => widget.onSearch(value.trim()),
         ),
       ),
-      OutlinedButton(
+      AdminCommandButton(
+        label: 'Search',
         onPressed: () => widget.onSearch(controller.text.trim()),
-        child: const Text('Search'),
       ),
     ],
   );

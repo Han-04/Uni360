@@ -220,9 +220,7 @@ class _AdminApprovalsState extends State<AdminApprovals> {
         AdminHeading(
           'Task approvals',
           subtitle: 'Review the checklist and evidence for submitted work.',
-          actions: [
-            OutlinedButton(onPressed: reload, child: const Text('Refresh')),
-          ],
+          actions: [AdminCommandButton(label: 'Refresh', onPressed: reload)],
         ),
         AdminLoad(
           listing,
@@ -246,10 +244,16 @@ class _AdminApprovalsState extends State<AdminApprovals> {
                       adminCell(orderLocation(row)),
                       adminCell(malaysiaStamp(row['scheduled_for'])),
                       adminCell(malaysiaStamp(row['submitted_at'])),
-                      adminAction('Review', () => open(row['id'] as String)),
+                      AdminCommandButton(
+                        label: 'Review',
+                        icon: Icons.fact_check_outlined,
+                        onPressed: () => open(row['id'] as String),
+                      ),
                     ],
                 ],
                 empty: 'No tasks are awaiting approval.',
+                emptyIllustration: adminEmptyTasksAsset,
+                darkHeading: true,
               ),
               AdminPager(
                 page: page,

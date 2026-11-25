@@ -31,7 +31,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/workforce/empty-credentials.png
+    - assets/workforce/empty-workforce-box.png
+    - assets/workforce/no-assigned-task.png
     - assets/tasks/empty-tasks.png
+    - assets/facilities/empty-locations.png
     - assets/notifications/empty-mailbox.png
     - assets/fonts/selawik/LICENSE.txt
   fonts:
