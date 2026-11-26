@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:qr/qr.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/theme/app_theme.dart';
-import '../../core/widgets/curved_back_button.dart';
 import '../preventive/admin/admin_widgets.dart';
 import 'corrective_analytics.dart';
 import 'corrective_case_pdf.dart';
@@ -16,16 +16,29 @@ import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 import 'incident_report_screen.dart';
 
+enum CorrectiveAdminPage {
+  incidents('All incidents', Icons.list_alt_outlined),
+  intake('Review reports', Icons.fact_check_outlined),
+  dispatch('Assign work', Icons.assignment_ind_outlined),
+  evidence('Check completed work', Icons.verified_outlined),
+  analytics('Analytics', Icons.bar_chart_outlined),
+  settings('Settings', Icons.tune_outlined);
+
+  const CorrectiveAdminPage(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
 class CorrectiveAdmin extends StatefulWidget {
   const CorrectiveAdmin({
     super.key,
     required this.repository,
     required this.administratorId,
-    this.onReturnToPortal,
+    this.page = CorrectiveAdminPage.incidents,
   });
   final CorrectiveRepository repository;
   final String administratorId;
-  final VoidCallback? onReturnToPortal;
+  final CorrectiveAdminPage page;
 
   @override
   State<CorrectiveAdmin> createState() => _CorrectiveAdminState();
@@ -36,9 +49,11 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   late final RealtimeChannel _channel;
   late Future<List<CorrectiveIncident>> _list;
   String? _selected;
-  String _filter = 'active';
-  String? _urgency;
-  String? _categoryFilter, _facilityFilter;
+  CorrectiveIncident? _editing;
+  bool _reportOpen = false;
+  bool _filtersOpen = false;
+  String _scope = 'all';
+  String? _urgency, _categoryFilter, _facilityFilter;
   DateTimeRange? _dateFilter;
   Timer? _refreshTimer;
 
@@ -50,6 +65,20 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
       _refreshTimer?.cancel();
       _refreshTimer = Timer(const Duration(milliseconds: 250), _refresh);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant CorrectiveAdmin oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page == widget.page) return;
+    _selected = null;
+    _editing = null;
+    _reportOpen = false;
+    _filtersOpen = false;
+    _query.clear();
+    _scope = 'all';
+    _urgency = _categoryFilter = _facilityFilter = null;
+    _dateFilter = null;
   }
 
   @override
@@ -71,50 +100,64 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
   }
 
   Future<void> _selectDates() async {
-    final result = await showDateRangePicker(
+    final page = widget.page;
+    final result = await showDialog<DateTimeRange>(
       context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-      initialDateRange: _dateFilter,
-    );
-    if (mounted && result != null) setState(() => _dateFilter = result);
-  }
-
-  Future<void> _report() async {
-    final result = await Navigator.of(context).push(
-      correctivePage<IncidentReportResult>(
-        context,
-        builder: (_) =>
-            IncidentReportScreen(widget.repository, administrator: true),
-      ),
-    );
-    if (!mounted || result == null) return;
-    _refresh();
-    if (result.openDetails) _open(result.id);
-  }
-
-  void _open(String id) {
-    if (MediaQuery.sizeOf(context).width >= 1050) {
-      setState(() => _selected = id);
-      return;
-    }
-    Navigator.of(context).push(
-      correctivePage<void>(
-        context,
-        builder: (context) => Scaffold(
-          appBar: AppBar(
-            leading: CurvedBackButton.forRoute(context),
-            title: const Text('Review incident'),
-          ),
-          body: _AdminIncident(
-            repository: widget.repository,
-            id: id,
-            onChange: _refresh,
+      builder: (context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 488, maxHeight: 580),
+            child: LayoutBuilder(
+              builder: (context, size) => MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(size: Size(size.maxWidth, size.maxHeight)),
+                child: DatePickerTheme(
+                  data: DatePickerTheme.of(context).copyWith(
+                    rangePickerShape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: DateRangePickerDialog(
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now().add(const Duration(days: 1)),
+                    initialDateRange: _dateFilter,
+                    initialEntryMode: DatePickerEntryMode.calendarOnly,
+                    helpText: 'Report dates',
+                    saveText: 'Apply dates',
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
+    if (mounted && widget.page == page && result != null) {
+      setState(() => _dateFilter = result);
+    }
   }
+
+  void _clearExtraFilters() => setState(() {
+    _urgency = _categoryFilter = _facilityFilter = null;
+    _dateFilter = null;
+  });
+
+  void _report([CorrectiveIncident? incident]) => setState(() {
+    _editing = incident;
+    _reportOpen = true;
+  });
+
+  void _closeReport(IncidentReportResult? result) => setState(() {
+    _editing = null;
+    _reportOpen = false;
+    if (result != null) {
+      _list = _request();
+      if (result.openDetails) _selected = result.id;
+    }
+  });
+
+  void _open(String id) => setState(() => _selected = id);
 
   void _showNotifications() {
     showDialog<void>(
@@ -143,393 +186,425 @@ class _CorrectiveAdminState extends State<CorrectiveAdmin> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: widget.onReturnToPortal == null
-          ? CurvedBackButton.forRoute(context)
-          : CurvedBackButton(onPressed: widget.onReturnToPortal),
-      title: const Text('Corrective Maintenance'),
-      actions: [
-        IconButton(
-          tooltip: 'Manage maintenance categories',
-          icon: const Icon(Icons.category_outlined),
-          onPressed: () => Navigator.of(context).push(
-            correctivePage<void>(
-              context,
-              builder: (_) => CorrectiveCategoriesScreen(widget.repository),
+  List<CorrectiveIncident> _visible(List<CorrectiveIncident> rows) {
+    final search = _query.text.trim().toLowerCase();
+    return rows.where((incident) {
+      final status = incident.status;
+      final matches = switch (widget.page) {
+        CorrectiveAdminPage.intake =>
+          !incident.archived &&
+              !incident.closed &&
+              {'reported', 'needs_info', 'inspection'}.contains(status),
+        CorrectiveAdminPage.dispatch =>
+          !incident.archived &&
+              !incident.closed &&
+              {'approved', 'escalated', 'external'}.contains(status),
+        CorrectiveAdminPage.evidence =>
+          !incident.archived && !incident.closed && status == 'submitted',
+        _ when _scope == 'all' => true,
+        _ when _scope == 'archive' => incident.archived,
+        _ when _scope == 'withdrawn' => incident.withdrawn,
+        _ when incident.archived => false,
+        _ => switch (_scope) {
+          'field' =>
+            !incident.closed &&
+                {
+                  'assigned',
+                  'acknowledged',
+                  'checked_in',
+                  'in_progress',
+                  'rework',
+                }.contains(status),
+          'overdue' => incident.overdue,
+          'closed' => incident.closed,
+          _ => !incident.closed,
+        },
+      };
+      if (!matches ||
+          (_urgency != null && incident.urgency != _urgency) ||
+          (_categoryFilter != null && incident.category != _categoryFilter) ||
+          (_facilityFilter != null && incident.facility != _facilityFilter)) {
+        return false;
+      }
+      if (_dateFilter case final dates?) {
+        final malaysiaDate = incident.created.toUtc().add(
+          const Duration(hours: 8),
+        );
+        final day = DateTime(
+          malaysiaDate.year,
+          malaysiaDate.month,
+          malaysiaDate.day,
+        );
+        if (day.isBefore(dates.start) || day.isAfter(dates.end)) return false;
+      }
+      return [
+        incident.reference,
+        incident.title,
+        incident.facility,
+        incident.worker ?? '',
+        incident.reporter,
+      ].join(' ').toLowerCase().contains(search);
+    }).toList()..sort((a, b) {
+      final priority = correctiveUrgencies
+          .indexOf(b.urgency)
+          .compareTo(correctiveUrgencies.indexOf(a.urgency));
+      return priority != 0 ? priority : b.created.compareTo(a.created);
+    });
+  }
+
+  Widget _queue(List<CorrectiveIncident> rows, bool loading) {
+    final visible = _visible(rows);
+    final page = widget.page;
+    final (subtitle, empty) = switch (page) {
+      CorrectiveAdminPage.intake => (
+        'Confirm the fault and priority, request more information, or approve it for repair.',
+        'No reports are waiting for review. Reports that need your decision will appear here.',
+      ),
+      CorrectiveAdminPage.dispatch => (
+        'Assign approved repairs to a worker or arrange help for escalated cases.',
+        'No repairs need assignment. Approved reports and escalated cases will appear here.',
+      ),
+      CorrectiveAdminPage.evidence => (
+        'Check the worker’s submitted notes and evidence, then resolve the incident or request rework.',
+        'No completed repairs are waiting for a check. Worker submissions will appear here.',
+      ),
+      _ => (
+        'Search all reports you can access, including closed, withdrawn and archived cases.',
+        'No corrective incident reports are available to this account.',
+      ),
+    };
+    final filterCount = [
+      _urgency,
+      _categoryFilter,
+      _facilityFilter,
+      _dateFilter,
+    ].nonNulls.length;
+    final hasFilters =
+        _query.text.trim().isNotEmpty || _scope != 'all' || filterCount > 0;
+    final search = TextField(
+      controller: _query,
+      onChanged: (_) => setState(() {}),
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search),
+        labelText: 'Search by reference, title, facility or person',
+      ),
+    );
+    final scope = page == CorrectiveAdminPage.incidents
+        ? DropdownButtonFormField<String>(
+            initialValue: _scope,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Show incidents'),
+            items: const [
+              DropdownMenuItem(value: 'all', child: Text('All statuses')),
+              DropdownMenuItem(
+                value: 'active',
+                child: Text('Active incidents'),
+              ),
+              DropdownMenuItem(value: 'field', child: Text('Field work')),
+              DropdownMenuItem(value: 'overdue', child: Text('Overdue')),
+              DropdownMenuItem(value: 'closed', child: Text('Closed')),
+              DropdownMenuItem(value: 'withdrawn', child: Text('Withdrawn')),
+              DropdownMenuItem(value: 'archive', child: Text('Archive')),
+            ],
+            onChanged: (value) => setState(() => _scope = value ?? 'all'),
+          )
+        : null;
+    final filters = FilledButton.icon(
+      onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
+      icon: Icon(_filtersOpen ? Icons.expand_less : Icons.filter_list),
+      label: Text(filterCount == 0 ? 'Filters' : 'Filters ($filterCount)'),
+    );
+    return LayoutBuilder(
+      builder: (context, size) => ListView(
+        key: ValueKey(page),
+        padding: EdgeInsets.all(size.maxWidth >= 820 ? 28 : 16),
+        children: [
+          AdminHeading(
+            page.label,
+            subtitle: subtitle,
+            actions: [
+              if (page == CorrectiveAdminPage.incidents)
+                FilledButton.icon(
+                  onPressed: () => _report(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Report an incident'),
+                ),
+              IconButton(
+                onPressed: _showNotifications,
+                tooltip: 'Corrective updates',
+                icon: const Icon(Icons.notifications_outlined),
+              ),
+              IconButton(
+                onPressed: _refresh,
+                tooltip: 'Refresh incident queue',
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          CorrectivePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (size.maxWidth >= 700)
+                  Row(
+                    children: [
+                      Expanded(child: search),
+                      if (scope != null) ...[
+                        const SizedBox(width: 12),
+                        SizedBox(width: 200, child: scope),
+                      ],
+                      const SizedBox(width: 12),
+                      filters,
+                    ],
+                  )
+                else ...[
+                  search,
+                  if (scope != null) ...[correctiveGap(12), scope],
+                  correctiveGap(12),
+                  Align(alignment: Alignment.centerLeft, child: filters),
+                ],
+                if (_filtersOpen) _filterFields(rows, filterCount),
+              ],
             ),
           ),
+          correctiveGap(),
+          if (loading) const LinearProgressIndicator(),
+          if (!loading && visible.isNotEmpty) ...[
+            Text(
+              '${visible.length} ${visible.length == 1 ? 'incident' : 'incidents'}',
+            ),
+            correctiveGap(8),
+          ],
+          if (!loading && visible.isEmpty)
+            CorrectiveMessage(
+              hasFilters
+                  ? 'No incidents match your search and filters.'
+                  : empty,
+            ),
+          if (visible.isNotEmpty && size.maxWidth >= 960)
+            AdminTable(
+              const [
+                'Incident',
+                'Facility',
+                'Priority',
+                'Status',
+                'Assigned to',
+              ],
+              [
+                for (final incident in visible)
+                  [
+                    SizedBox(
+                      width: 220,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            incident.reference,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          Text(
+                            incident.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 125,
+                      child: Text(
+                        incident.facility,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    CorrectiveBadge.priority(incident.urgency),
+                    CorrectiveBadge.status(incident),
+                    SizedBox(
+                      width: 100,
+                      child: Text(
+                        incident.worker ?? 'Unassigned',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+              ],
+              empty: 'No incidents match this view.',
+              onRowTap: (index) => _open(visible[index].id),
+            )
+          else
+            for (final incident in visible)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: IncidentTile(incident, onOpen: () => _open(incident.id)),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterFields(List<CorrectiveIncident> rows, int count) {
+    final dates = _dateFilter;
+    final localizations = MaterialLocalizations.of(context);
+    final dateLabel = dates == null
+        ? 'Select report dates'
+        : '${localizations.formatShortDate(dates.start)} – ${localizations.formatShortDate(dates.end)}';
+    final fields = [
+      _facet(
+        'Priority',
+        'All priorities',
+        _urgency,
+        correctiveUrgencies,
+        (value) => setState(() => _urgency = value),
+      ),
+      _facet(
+        'Category',
+        'All categories',
+        _categoryFilter,
+        rows.map((row) => row.category).toSet().toList()..sort(),
+        (value) => setState(() => _categoryFilter = value),
+      ),
+      _facet(
+        'Facility',
+        'All facilities',
+        _facilityFilter,
+        rows.map((row) => row.facility).toSet().toList()..sort(),
+        (value) => setState(() => _facilityFilter = value),
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 14),
+        const Divider(height: 1),
+        const SizedBox(height: 14),
+        LayoutBuilder(
+          builder: (context, size) {
+            const gap = 12.0;
+            final columns = size.maxWidth >= 640 ? 3 : 1;
+            final width = (size.maxWidth - gap * (columns - 1)) / columns;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final field in fields)
+                  SizedBox(width: width, child: field),
+              ],
+            );
+          },
         ),
-        IconButton(
-          tooltip: 'Corrective updates',
-          onPressed: _showNotifications,
-          icon: const Icon(Icons.notifications_outlined),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _selectDates,
+              icon: const Icon(Icons.date_range),
+              label: Text(dateLabel),
+            ),
+            if (count > 0)
+              TextButton(
+                onPressed: _clearExtraFilters,
+                child: const Text('Clear filters'),
+              ),
+          ],
         ),
-        IconButton(
-          tooltip: 'Facility check-in settings',
-          onPressed: () => showDialog<void>(
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder(
+    future: _list,
+    builder: (context, snapshot) {
+      if (_reportOpen) {
+        return IncidentReportScreen(
+          widget.repository,
+          pending: _editing,
+          administrator: true,
+          onExit: _closeReport,
+        );
+      }
+      if (_selected case final id?) {
+        return _AdminIncident(
+          key: ValueKey(id),
+          repository: widget.repository,
+          id: id,
+          onChange: _refresh,
+          onBack: () => setState(() => _selected = null),
+          onEdit: _report,
+        );
+      }
+      if (widget.page == CorrectiveAdminPage.settings) {
+        return CorrectiveCategoriesScreen(
+          widget.repository,
+          onConfigureSite: () => showDialog<void>(
             context: context,
             builder: (_) => _SiteDialog(widget.repository),
           ),
-          icon: const Icon(Icons.qr_code_2),
-        ),
-        IconButton(
-          tooltip: 'Refresh incident queue',
-          onPressed: _refresh,
-          icon: const Icon(Icons.refresh),
-        ),
-        const SizedBox(width: 10),
-      ],
-    ),
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 1050;
-          final queue = FutureBuilder(
-            future: _list,
-            builder: (context, snapshot) {
-              final rows = snapshot.data ?? <CorrectiveIncident>[];
-              final search = _query.text.trim().toLowerCase();
-              final visible =
-                  rows.where((incident) {
-                    if (incident.archived) {
-                      if (_filter != 'archive') return false;
-                    } else if (_filter == 'archive') {
-                      return false;
-                    }
-                    final matches = switch (_filter) {
-                      'archive' => true,
-                      'active' => !closedCorrectiveStatuses.contains(
-                        incident.status,
-                      ),
-                      'dispatch' => {
-                        'approved',
-                        'escalated',
-                        'external',
-                      }.contains(incident.status),
-                      'intake' => {
-                        'reported',
-                        'needs_info',
-                        'inspection',
-                      }.contains(incident.status),
-                      'overdue' => incident.overdue,
-                      'work' => {
-                        'assigned',
-                        'acknowledged',
-                        'checked_in',
-                        'in_progress',
-                        'rework',
-                      }.contains(incident.status),
-                      'closed' => closedCorrectiveStatuses.contains(
-                        incident.status,
-                      ),
-                      _ => incident.status == _filter,
-                    };
-                    final malaysiaDate = incident.created.toUtc().add(
-                      const Duration(hours: 8),
-                    );
-                    final day = DateTime(
-                      malaysiaDate.year,
-                      malaysiaDate.month,
-                      malaysiaDate.day,
-                    );
-                    final dates = _dateFilter;
-                    return matches &&
-                        (_urgency == null || incident.urgency == _urgency) &&
-                        (_categoryFilter == null ||
-                            incident.category == _categoryFilter) &&
-                        (_facilityFilter == null ||
-                            incident.facility == _facilityFilter) &&
-                        (dates == null ||
-                            (!day.isBefore(dates.start) &&
-                                !day.isAfter(dates.end))) &&
-                        [
-                          incident.reference,
-                          incident.title,
-                          incident.facility,
-                          incident.worker ?? '',
-                          incident.reporter,
-                        ].join(' ').toLowerCase().contains(search);
-                  }).toList()..sort((a, b) {
-                    final priority = correctiveUrgencies
-                        .indexOf(b.urgency)
-                        .compareTo(correctiveUrgencies.indexOf(a.urgency));
-                    return priority != 0
-                        ? priority
-                        : b.created.compareTo(a.created);
-                  });
-              final active = rows
-                  .where((i) => !closedCorrectiveStatuses.contains(i.status))
-                  .length;
-              final pending = rows
-                  .where(
-                    (i) => {
-                      'approved',
-                      'escalated',
-                      'external',
-                    }.contains(i.status),
-                  )
-                  .length;
-              final review = rows.where((i) => i.status == 'submitted').length;
-              final inProgress = rows
-                  .where((i) => i.status == 'in_progress')
-                  .length;
-              final today = DateTime.now().toUtc().add(
-                const Duration(hours: 8),
-              );
-              final resolved = rows.where((i) {
-                final at = i.resolved?.toUtc().add(const Duration(hours: 8));
-                return at != null &&
-                    at.year == today.year &&
-                    at.month == today.month &&
-                    at.day == today.day;
-              }).length;
-              return ListView(
-                padding: EdgeInsets.fromLTRB(
-                  wide ? 24 : 16,
-                  8,
-                  wide ? 18 : 16,
-                  24,
-                ),
-                children: [
-                  const AdminHeading(
-                    'Incident command centre',
-                    subtitle: 'Review campus faults, dispatch workers and verify completed repairs.',
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Count('Active', active),
-                      _Count(
-                        'Overdue',
-                        rows.where((row) => row.overdue).length,
-                      ),
-                      _Count('Needs dispatch', pending),
-                      _Count('In progress', inProgress),
-                      _Count('Awaiting evidence review', review),
-                      _Count('Resolved today', resolved),
-                    ],
-                  ),
-                  correctiveGap(16),
-                  FilledButton.icon(
-                    onPressed: _report,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Report an incident'),
-                  ),
-                  if (kIsWeb && snapshot.hasData)
-                    OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                        correctivePage<void>(
-                          context,
-                          builder: (_) => CorrectiveAnalyticsScreen(rows),
-                        ),
-                      ),
-                      icon: const Icon(Icons.bar_chart),
-                      label: const Text('Analytics and summary PDF'),
-                    ),
-                  if (widget.onReturnToPortal != null)
-                    TextButton.icon(
-                      onPressed: widget.onReturnToPortal,
-                      icon: const Icon(Icons.manage_accounts_outlined),
-                      label: const Text(
-                        'Manage shared facilities and accounts',
-                      ),
-                    ),
-                  correctiveGap(10),
-                  DropdownButtonFormField<String>(
-                    initialValue: _urgency ?? '',
-                    decoration: const InputDecoration(
-                      labelText: 'Filter by priority',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('All priorities'),
-                      ),
-                      for (final urgency in correctiveUrgencies)
-                        DropdownMenuItem(value: urgency, child: Text(urgency)),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _urgency = value == '' ? null : value),
-                  ),
-                  correctiveGap(8),
-                  ExpansionTile(
-                    title: const Text('Category, facility and date'),
-                    childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    children: [
-                      _facet(
-                        'Category',
-                        _categoryFilter,
-                        rows.map((row) => row.category),
-                        (value) => setState(() => _categoryFilter = value),
-                      ),
-                      correctiveGap(8),
-                      _facet(
-                        'Facility',
-                        _facilityFilter,
-                        rows.map((row) => row.facility),
-                        (value) => setState(() => _facilityFilter = value),
-                      ),
-                      correctiveGap(8),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: _selectDates,
-                            icon: const Icon(Icons.date_range),
-                            label: Text(
-                              _dateFilter == null
-                                  ? 'Select report dates'
-                                  : '${MaterialLocalizations.of(context).formatCompactDate(_dateFilter!.start)} – ${MaterialLocalizations.of(context).formatCompactDate(_dateFilter!.end)}',
-                            ),
-                          ),
-                          if (_dateFilter != null)
-                            TextButton(
-                              onPressed: () =>
-                                  setState(() => _dateFilter = null),
-                              child: const Text('Clear dates'),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  TextField(
-                    controller: _query,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search),
-                      labelText: 'Find by reference, facility or person',
-                    ),
-                  ),
-                  correctiveGap(10),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 5,
-                    children: [
-                      for (final (key, label) in const [
-                        ('active', 'Active'),
-                        ('intake', 'Intake review'),
-                        ('dispatch', 'Needs dispatch'),
-                        ('work', 'Field work'),
-                        ('submitted', 'Evidence review'),
-                        ('overdue', 'Overdue'),
-                        ('closed', 'Closed'),
-                        ('archive', 'Archive'),
-                      ])
-                        ChoiceChip(
-                          label: Text(label),
-                          selected: _filter == key,
-                          onSelected: (_) => setState(() => _filter = key),
-                        ),
-                    ],
-                  ),
-                  correctiveGap(),
-                  if (snapshot.connectionState != ConnectionState.done)
-                    const LinearProgressIndicator(),
-                  if (snapshot.hasError)
-                    CorrectiveMessage(
-                      correctiveError(snapshot.error!),
-                      onRetry: _refresh,
-                    ),
-                  if (snapshot.hasData && visible.isEmpty)
-                    const CorrectiveMessage('No incidents match this view.'),
-                  if (!snapshot.hasError)
-                    for (final incident in visible)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: IncidentTile(
-                          incident,
-                          selected: wide && _selected == incident.id,
-                          onOpen: () => _open(incident.id),
-                        ),
-                      ),
-                ],
-              );
-            },
-          );
-          if (!wide) return queue;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(flex: 5, child: queue),
-              const VerticalDivider(width: 1),
-              Expanded(
-                flex: 6,
-                child: _selected == null
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(28),
-                          child: CorrectiveMessage(
-                            'Select an incident to review the report, assignment and evidence.',
-                            icon: Icons.fact_check_outlined,
-                          ),
-                        ),
-                      )
-                    : _AdminIncident(
-                        key: ValueKey(_selected),
-                        repository: widget.repository,
-                        id: _selected!,
-                        onChange: _refresh,
-                      ),
-              ),
-            ],
-          );
-        },
-      ),
-    ),
+        );
+      }
+      if (snapshot.hasError) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: CorrectiveMessage(
+              correctiveError(snapshot.error!),
+              onRetry: _refresh,
+            ),
+          ),
+        );
+      }
+      final rows = snapshot.data ?? <CorrectiveIncident>[];
+      if (widget.page == CorrectiveAdminPage.analytics) {
+        return snapshot.hasData
+            ? CorrectiveAnalyticsScreen(rows, onRefresh: _refresh)
+            : const Center(child: CircularProgressIndicator());
+      }
+      return _queue(rows, snapshot.connectionState != ConnectionState.done);
+    },
   );
 }
 
 Widget _facet(
   String label,
+  String allLabel,
   String? selected,
   Iterable<String> source,
   ValueChanged<String?> onChanged,
 ) {
-  final values = {...source, ?selected}.toList()..sort();
-  return DropdownButtonFormField<String>(
-    initialValue: selected ?? '',
-    isExpanded: true,
-    decoration: InputDecoration(labelText: label),
-    items: [
-      DropdownMenuItem(
-        value: '',
-        child: Text('All ${label.toLowerCase()} records'),
-      ),
-      for (final value in values)
-        DropdownMenuItem(
-          value: value,
-          child: Text(value, overflow: TextOverflow.ellipsis),
+  final values = {...source, ?selected};
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      DropdownButtonFormField<String>(
+        initialValue: selected ?? '',
+        isExpanded: true,
+        menuMaxHeight: 320,
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
-    ],
-    onChanged: (value) => onChanged(value == '' ? null : value),
-  );
-}
-
-class _Count extends StatelessWidget {
-  const _Count(this.label, this.value);
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) => CorrectivePanel(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    child: Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '$value  ',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-          ),
-          TextSpan(
-            text: label,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
+        items: [
+          DropdownMenuItem(value: '', child: Text(allLabel)),
+          for (final value in values)
+            DropdownMenuItem(
+              value: value,
+              child: Text(value, overflow: TextOverflow.ellipsis),
+            ),
         ],
+        onChanged: (value) => onChanged(value == '' ? null : value),
       ),
-    ),
+    ],
   );
 }
 
@@ -539,20 +614,27 @@ class _AdminIncident extends StatefulWidget {
     required this.repository,
     required this.id,
     required this.onChange,
+    required this.onBack,
+    required this.onEdit,
   });
   final CorrectiveRepository repository;
   final String id;
   final VoidCallback onChange;
+  final VoidCallback onBack;
+  final ValueChanged<CorrectiveIncident> onEdit;
 
   @override
   State<_AdminIncident> createState() => _AdminIncidentState();
 }
+
+enum _IncidentPanel { report, evidence, history }
 
 class _AdminIncidentState extends State<_AdminIncident> {
   late final RealtimeChannel _channel;
   late Future<(CorrectiveDetail, CorrectiveRow?)> _details = _load();
   bool _busy = false;
   String? _error;
+  _IncidentPanel? _panel;
 
   @override
   void initState() {
@@ -960,187 +1042,218 @@ class _AdminIncidentState extends State<_AdminIncident> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder(
-    future: _details,
-    builder: (context, snapshot) {
-      if (snapshot.hasError) {
-        return Padding(
-          padding: const EdgeInsets.all(18),
-          child: CorrectiveMessage(
-            correctiveError(snapshot.error!),
-            onRetry: _refresh,
-          ),
-        );
-      }
-      if (!snapshot.hasData) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      final (detail, options) = snapshot.data!;
-      final incident = detail.incident;
-      final disabled =
-          _busy || snapshot.connectionState != ConnectionState.done;
-      final dispatchable = {
-        'approved',
-        'escalated',
-        'assigned',
-        'acknowledged',
-        'checked_in',
-        'external',
-        'rework',
-      }.contains(incident.status);
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-        children: [
-          IncidentSummary(incident, widget.repository),
-          if (incident.canEditReport(widget.repository.actorId))
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: disabled
-                    ? null
-                    : () async {
-                        final result = await Navigator.of(context).push(
-                          correctivePage<IncidentReportResult>(
-                            context,
-                            builder: (_) => IncidentReportScreen(
-                              widget.repository,
-                              pending: incident,
-                              administrator: true,
-                            ),
-                          ),
-                        );
-                        if (mounted && result != null) {
-                          widget.onChange();
-                          _refresh();
-                        }
-                      },
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit pending report'),
-              ),
-            ),
-          if (options != null &&
-              const {
-                'resolved',
-                'rejected',
-                'dismissed',
-              }.contains(incident.status))
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: disabled
-                    ? null
-                    : () => _withNote(
-                        incident.archived ? 'restore' : 'archive',
-                        incident.archived
-                            ? 'Restore ${incident.reference}'
-                            : 'Archive ${incident.reference}',
-                      ),
-                icon: Icon(
-                  incident.archived
-                      ? Icons.unarchive_outlined
-                      : Icons.archive_outlined,
-                ),
-                label: Text(
-                  incident.archived ? 'Restore case' : 'Archive case',
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1120),
+      child: FutureBuilder(
+        future: _details,
+        builder: (context, snapshot) {
+          final data = snapshot.data;
+          final detail = data?.$1;
+          final options = data?.$2;
+          final incident = detail?.incident;
+          final panel =
+              _panel ??
+              (incident?.status == 'submitted'
+                  ? _IncidentPanel.evidence
+                  : _IncidentPanel.report);
+          final disabled =
+              _busy || snapshot.connectionState != ConnectionState.done;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _busy ? null : widget.onBack,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Back to incidents'),
                 ),
               ),
-            ),
-          if (options != null && incident.priorReportPhotos.isNotEmpty)
-            CorrectiveAttachmentHistory(incident, widget.repository),
-          if (kIsWeb && options != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: disabled
-                    ? null
-                    : () async {
-                        try {
-                          await exportCorrectiveCase(detail);
-                        } on Exception {
-                          if (mounted) {
-                            setState(
-                              () => _error =
-                                  'The case PDF could not be generated.',
-                            );
-                          }
-                        }
-                      },
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Download case PDF'),
-              ),
-            ),
-          correctiveGap(),
-          if (disabled) const LinearProgressIndicator(),
-          if (_error case final error?) ...[
-            CorrectiveMessage(error),
-            correctiveGap(),
-          ],
-          if (options != null &&
-              {
-                'reported',
-                'needs_info',
-                'inspection',
-              }.contains(incident.status)) ...[
-            _review(incident, options, disabled),
-            correctiveGap(),
-          ],
-          if (options != null && dispatchable) ...[
-            _dispatch(incident, options, disabled),
-            correctiveGap(),
-          ],
-          CorrectiveVisits(detail, widget.repository),
-          if (options != null && incident.status == 'submitted') ...[
-            CorrectivePanel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const CorrectiveHeading('Review completion evidence'),
-                  correctiveGap(10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton(
-                        onPressed: disabled
-                            ? null
-                            : () => _withNote(
-                                'approve',
-                                'Approve and resolve incident',
-                              ),
-                        child: const Text('Approve and resolve'),
+              if (snapshot.hasError)
+                CorrectiveMessage(
+                  correctiveError(snapshot.error!),
+                  onRetry: _refresh,
+                )
+              else if (incident == null || detail == null)
+                const LinearProgressIndicator()
+              else ...[
+                AdminHeading(
+                  incident.reference,
+                  subtitle: incident.title,
+                  actions: [
+                    CorrectiveBadge.status(incident),
+                    if (kIsWeb && options != null)
+                      OutlinedButton.icon(
+                        onPressed: disabled ? null : () => _download(detail),
+                        icon: const Icon(Icons.picture_as_pdf_outlined),
+                        label: const Text('Download case PDF'),
                       ),
-                      OutlinedButton(
-                        onPressed: disabled
-                            ? null
-                            : () => _withNote('rework', 'Request rework'),
-                        child: const Text('Request rework'),
+                    IconButton(
+                      onPressed: disabled ? null : _refresh,
+                      tooltip: 'Refresh details',
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    for (final (item, label) in const [
+                      (_IncidentPanel.report, 'Report'),
+                      (_IncidentPanel.evidence, 'Work & evidence'),
+                      (_IncidentPanel.history, 'History'),
+                    ])
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: panel == item,
+                        onSelected: (_) => setState(() => _panel = item),
                       ),
-                      OutlinedButton(
-                        onPressed: disabled
-                            ? null
-                            : () => _withNote(
-                                'reject',
-                                'Reject submitted evidence',
-                              ),
-                        child: const Text('Reject evidence'),
-                      ),
-                    ],
-                  ),
+                  ],
+                ),
+                correctiveGap(),
+                if (disabled) const LinearProgressIndicator(),
+                if (_error case final error?) ...[
+                  CorrectiveMessage(error),
+                  correctiveGap(),
                 ],
-              ),
-            ),
-            correctiveGap(),
-          ],
-          CorrectiveHistory(detail.events),
-          TextButton.icon(
-            onPressed: disabled ? null : _refresh,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Refresh details'),
-          ),
-        ],
-      );
-    },
+                if (panel == _IncidentPanel.report) ...[
+                  IncidentSummary(
+                    incident,
+                    widget.repository,
+                    showHeading: false,
+                  ),
+                  correctiveGap(),
+                  if (incident.canEditReport(widget.repository.actorId))
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: disabled
+                            ? null
+                            : () => widget.onEdit(incident),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Edit pending report'),
+                      ),
+                    ),
+                  if (options != null &&
+                      const {
+                        'resolved',
+                        'rejected',
+                        'dismissed',
+                      }.contains(incident.status))
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: disabled
+                            ? null
+                            : () => _withNote(
+                                incident.archived ? 'restore' : 'archive',
+                                incident.archived
+                                    ? 'Restore ${incident.reference}'
+                                    : 'Archive ${incident.reference}',
+                              ),
+                        icon: Icon(
+                          incident.archived
+                              ? Icons.unarchive_outlined
+                              : Icons.archive_outlined,
+                        ),
+                        label: Text(
+                          incident.archived ? 'Restore case' : 'Archive case',
+                        ),
+                      ),
+                    ),
+                  if (options != null && incident.priorReportPhotos.isNotEmpty)
+                    CorrectiveAttachmentHistory(incident, widget.repository),
+                  if (options != null &&
+                      const {
+                        'reported',
+                        'needs_info',
+                        'inspection',
+                      }.contains(incident.status))
+                    _review(incident, options, disabled),
+                  if (options != null &&
+                      const {
+                        'approved',
+                        'escalated',
+                        'assigned',
+                        'acknowledged',
+                        'checked_in',
+                        'external',
+                        'rework',
+                      }.contains(incident.status))
+                    _dispatch(incident, options, disabled),
+                ],
+                if (panel == _IncidentPanel.evidence) ...[
+                  if (detail.visits.isEmpty)
+                    const CorrectiveMessage(
+                      'No site visits have been recorded.',
+                    )
+                  else
+                    CorrectiveVisits(detail, widget.repository),
+                  if (options != null && incident.status == 'submitted') ...[
+                    correctiveGap(),
+                    CorrectivePanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const CorrectiveHeading('Review completion evidence'),
+                          correctiveGap(10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              FilledButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => _withNote(
+                                        'approve',
+                                        'Approve and resolve incident',
+                                      ),
+                                child: const Text('Approve and resolve'),
+                              ),
+                              OutlinedButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () =>
+                                          _withNote('rework', 'Request rework'),
+                                child: const Text('Request rework'),
+                              ),
+                              OutlinedButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => _withNote(
+                                        'reject',
+                                        'Reject submitted evidence',
+                                      ),
+                                child: const Text('Reject evidence'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+                if (panel == _IncidentPanel.history)
+                  CorrectiveHistory(detail.events),
+              ],
+            ],
+          );
+        },
+      ),
+    ),
   );
+
+  Future<void> _download(CorrectiveDetail detail) async {
+    try {
+      await exportCorrectiveCase(detail);
+    } on Exception {
+      if (mounted) {
+        setState(() => _error = 'The case PDF could not be generated.');
+      }
+    }
+  }
 }
 
 class _ReviewDialog extends StatefulWidget {
@@ -1520,38 +1633,54 @@ class _SiteDialog extends StatefulWidget {
   State<_SiteDialog> createState() => _SiteDialogState();
 }
 
+typedef _CheckInFacility = ({String id, String label, String searchText});
+
 class _SiteDialogState extends State<_SiteDialog> {
-  late final Future<CorrectiveRow> _catalog = widget.repository.catalog();
+  late final Future<List<_CheckInFacility>> _facilities = widget.repository
+      .catalog()
+      .then(
+        (catalog) => [
+          for (final row in correctiveRows(catalog['facilities']))
+            if (row['can_manage'] == true)
+              (
+                id: row['id'] as String,
+                label: row['label'] as String,
+                searchText: (row['label'] as String).toLowerCase(),
+              ),
+        ],
+      );
   final _form = GlobalKey<FormState>();
-  final _lat = TextEditingController();
-  final _lng = TextEditingController();
+  final _mapPin = TextEditingController();
   final _radius = TextEditingController(text: '60');
-  String? _facility, _error, _qr;
+  _CheckInFacility? _facility;
+  String? _error, _qr, _locationSource;
+  ({double latitude, double longitude})? _point;
   bool _busy = false;
   bool _rotate = false;
 
   @override
   void dispose() {
-    _lat.dispose();
-    _lng.dispose();
+    _mapPin.dispose();
     _radius.dispose();
     super.dispose();
   }
 
-  Future<void> _select(String? id) async {
-    if (id == null) return;
+  Future<void> _select(_CheckInFacility facility) async {
+    if (_busy || _facility?.id == facility.id) return;
+    FocusScope.of(context).unfocus();
     setState(() {
-      _facility = id;
+      _facility = facility;
       _busy = true;
       _error = null;
       _qr = null;
       _rotate = false;
-      _lat.clear();
-      _lng.clear();
+      _mapPin.clear();
+      _point = null;
+      _locationSource = null;
       _radius.text = '60';
     });
     try {
-      final site = await widget.repository.site(id);
+      final site = await widget.repository.site(facility.id);
       if (mounted && site != null) _setSite(site);
     } on Exception catch (error) {
       if (mounted) setState(() => _error = correctiveError(error));
@@ -1561,23 +1690,86 @@ class _SiteDialogState extends State<_SiteDialog> {
   }
 
   void _setSite(CorrectiveRow site) => setState(() {
-    _lat.text = '${site['latitude']}';
-    _lng.text = '${site['longitude']}';
+    _point = (
+      latitude: (site['latitude'] as num).toDouble(),
+      longitude: (site['longitude'] as num).toDouble(),
+    );
+    _mapPin.clear();
+    _locationSource = 'Saved check-in location';
     _radius.text = '${site['radius_m']}';
     _qr = 'uni360:${site['qr_token']}';
     _rotate = false;
   });
 
-  Future<void> _save() async {
-    if (_facility == null || !(_form.currentState?.validate() ?? false)) return;
+  Future<void> _useCurrentLocation() async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final site = await widget.repository.saveSite(_facility!, {
-        'latitude': double.parse(_lat.text),
-        'longitude': double.parse(_lng.text),
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      if (!mounted) return;
+      if (position.isMocked || position.accuracy > 100) {
+        throw const FormatException(
+          'This location reading is too imprecise. Try outdoors or use a map pin.',
+        );
+      }
+      setState(() {
+        _point = (latitude: position.latitude, longitude: position.longitude);
+        _mapPin.clear();
+        _locationSource =
+            'Current location captured (accuracy ±${position.accuracy.round()} m)';
+      });
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Exception {
+      if (mounted) {
+        setState(
+          () => _error = 'Location is unavailable. Allow location access in your browser, or use a map pin.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openMap(String facilityName) async {
+    final url = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': 'TAR UMT $facilityName',
+    });
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      setState(
+        () => _error = 'Open Google Maps and find the selected facility.',
+      );
+    }
+  }
+
+  Future<void> _save() async {
+    if (_facility == null || !(_form.currentState?.validate() ?? false)) return;
+    final input = _mapPin.text.trim();
+    final point = input.isEmpty ? _point : _parseMapPin(input);
+    if (point == null) {
+      setState(
+        () => _error =
+            'Use your current location or paste a map pin to continue.',
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final site = await widget.repository.saveSite(_facility!.id, {
+        'latitude': point.latitude,
+        'longitude': point.longitude,
         'radius_m': int.parse(_radius.text),
         'rotate': _rotate,
       });
@@ -1589,30 +1781,19 @@ class _SiteDialogState extends State<_SiteDialog> {
     }
   }
 
-  Widget _field(
-    String label,
-    TextEditingController controller,
-    num minimum,
-    num maximum, {
-    bool integer = false,
-  }) => TextFormField(
-    controller: controller,
+  Widget _radiusField() => TextFormField(
+    controller: _radius,
     enabled: !_busy,
-    keyboardType: TextInputType.numberWithOptions(
-      decimal: !integer,
-      signed: minimum < 0,
+    keyboardType: TextInputType.number,
+    decoration: const InputDecoration(
+      labelText: 'Allowed check-in distance (metres)',
+      helperText: 'How far a worker can be from the pin. Start with 60 m.',
     ),
-    decoration: InputDecoration(labelText: label),
     validator: (value) {
-      final parsed = integer
-          ? int.tryParse(value ?? '')
-          : double.tryParse(value ?? '');
-      return parsed != null &&
-              parsed.isFinite &&
-              parsed >= minimum &&
-              parsed <= maximum
+      final parsed = int.tryParse(value ?? '');
+      return parsed != null && parsed >= 15 && parsed <= 500
           ? null
-          : 'Enter a value from $minimum to $maximum.';
+          : 'Enter a distance from 15 to 500 metres.';
     },
   );
 
@@ -1622,12 +1803,11 @@ class _SiteDialogState extends State<_SiteDialog> {
     content: SizedBox(
       width: 490,
       child: FutureBuilder(
-        future: _catalog,
+        future: _facilities,
         builder: (context, snapshot) {
           if (snapshot.hasError) return Text(correctiveError(snapshot.error!));
           if (!snapshot.hasData) return const LinearProgressIndicator();
-          final sites = correctiveRows(snapshot.data!['facilities'])
-              .where((row) => row['can_manage'] == true);
+          final sites = snapshot.data!;
           if (sites.isEmpty) {
             return const Text(
               'Assign this account to a facility zone before configuring check-in.',
@@ -1639,36 +1819,84 @@ class _SiteDialogState extends State<_SiteDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: _facility,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Facility'),
-                    items: sites
-                        .map(
-                          (row) => DropdownMenuItem(
-                            value: row['id'] as String,
-                            child: Text(
-                              row['label'] as String,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                  Autocomplete<_CheckInFacility>(
+                    displayStringForOption: (facility) => facility.label,
+                    optionsMaxHeight: 240,
+                    optionsViewOpenDirection:
+                        OptionsViewOpenDirection.mostSpace,
+                    optionsBuilder: (input) {
+                      final query = input.text.trim().toLowerCase();
+                      if (query.isEmpty) return const [];
+                      final terms = query.split(RegExp(r'[\s/]+'));
+                      return sites
+                          .where(
+                            (site) => terms.every(site.searchText.contains),
+                          )
+                          .take(20)
+                          .toList();
+                    },
+                    fieldViewBuilder: (context, controller, focus, submit) =>
+                        TextField(
+                          controller: controller,
+                          focusNode: focus,
+                          enabled: !_busy,
+                          onSubmitted: (_) => submit(),
+                          decoration: const InputDecoration(
+                            labelText: 'Search for a facility',
+                            prefixIcon: Icon(Icons.search),
+                            helperText: 'Type a building, room, or asset name.',
                           ),
-                        )
-                        .toList(),
-                    onChanged: _busy ? null : _select,
+                        ),
+                    onSelected: _select,
                   ),
-                  if (_facility != null) ...[
+                  if (_facility case final facility?) ...[
                     correctiveGap(),
-                    _field('Latitude', _lat, -90, 90),
-                    correctiveGap(),
-                    _field('Longitude', _lng, -180, 180),
-                    correctiveGap(),
-                    _field(
-                      'Geofence radius (metres)',
-                      _radius,
-                      15,
-                      500,
-                      integer: true,
+                    Text('Selected facility: ${facility.label}'),
+                    correctiveGap(8),
+                    const Text(
+                      'Set the check-in point from the facility or drop a pin on the map.',
                     ),
+                    correctiveGap(8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _useCurrentLocation,
+                          icon: const Icon(Icons.my_location),
+                          label: const Text('Use current location'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _openMap(facility.label),
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open Google Maps'),
+                        ),
+                      ],
+                    ),
+                    if (_locationSource case final source?) ...[
+                      correctiveGap(8),
+                      Text(source),
+                    ],
+                    correctiveGap(),
+                    TextFormField(
+                      controller: _mapPin,
+                      enabled: !_busy,
+                      decoration: const InputDecoration(
+                        labelText: 'Paste a map pin',
+                        helperText: 'In Google Maps, right-click the check-in spot, click the coordinate pair to copy it, then paste here.',
+                        helperMaxLines: 3,
+                      ),
+                      validator: (value) {
+                        final pin = value?.trim() ?? '';
+                        return pin.isEmpty || _parseMapPin(pin) != null
+                            ? null
+                            : 'Paste the coordinate pair copied from the map.';
+                      },
+                    ),
+                    correctiveGap(),
+                    _radiusField(),
                   ],
                   if (_busy) const LinearProgressIndicator(),
                   if (_error case final error?) ...[
@@ -1719,6 +1947,16 @@ class _SiteDialogState extends State<_SiteDialog> {
       ),
     ],
   );
+}
+
+({double latitude, double longitude})? _parseMapPin(String text) {
+  final match = RegExp(r'^([+-]?\d+(?:\.\d+)?),\s*([+-]?\d+(?:\.\d+)?)$')
+      .firstMatch(text);
+  if (match == null) return null;
+  final latitude = double.parse(match[1]!);
+  final longitude = double.parse(match[2]!);
+  if (latitude.abs() > 90 || longitude.abs() > 180) return null;
+  return (latitude: latitude, longitude: longitude);
 }
 
 class _QrPainter extends CustomPainter {

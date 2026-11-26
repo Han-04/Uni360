@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/phone_viewport.dart';
 import '../features/corrective/corrective_access.dart';
-import '../features/corrective/corrective_admin.dart';
 import '../features/corrective/corrective_repository.dart';
 import '../features/corrective/corrective_widgets.dart';
 import '../features/preventive/admin/admin_dashboard.dart';
@@ -133,7 +132,6 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
       routes: {
         adminPortalRoute: (context) {
           final data = widget.administration;
-          final repository = widget.corrective;
           return Theme(
             data: buildPreventiveTheme(Theme.of(context)),
             child: data == null
@@ -148,19 +146,7 @@ class _Uni360AppState extends State<Uni360App> with WidgetsBindingObserver {
                 : AdminDashboard(
                     accounts: _accounts,
                     data: data,
-                    openCorrective: repository == null
-                        ? null
-                        : (context, account) =>
-                              Navigator.of(context).push<void>(
-                                correctivePage<void>(
-                                  context,
-                                  builder: (context) => CorrectiveAdmin(
-                                    repository: repository,
-                                    administratorId: account.id,
-                                    onReturnToPortal: Navigator.of(context).pop,
-                                  ),
-                                ),
-                              ),
+                    corrective: widget.corrective,
                   ),
           );
         },

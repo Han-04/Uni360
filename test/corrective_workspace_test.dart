@@ -7,6 +7,7 @@ import 'package:uni360/app/uni360_app.dart';
 import 'package:uni360/core/theme/app_theme.dart';
 import 'package:uni360/core/widgets/phone_viewport.dart';
 import 'package:uni360/features/corrective/corrective_admin.dart';
+import 'package:uni360/features/corrective/corrective_analytics.dart';
 import 'package:uni360/features/corrective/corrective_case_pdf.dart';
 import 'package:uni360/features/corrective/corrective_photo_diagnostics.dart';
 import 'package:uni360/features/corrective/corrective_repository.dart';
@@ -37,6 +38,9 @@ class _CorrectiveFixture extends CorrectiveRepository {
   final bool ownsReport;
   final String? savedPhoto;
   final photoPreviews = <String>[];
+  final extraIncidents = <CorrectiveIncident>[];
+  List<CorrectiveRow> extraFacilities = const [];
+  CorrectiveRow? configuredSite;
   String status;
   bool withdrawn = false;
   final actions = <String>[];
@@ -69,13 +73,27 @@ class _CorrectiveFixture extends CorrectiveRepository {
   Future<int> unreadNotifications() async => 0;
 
   @override
+  Future<List<CorrectiveRow>> categories() async => [
+    {'name': 'Plumbing', 'team': 'Plumbing', 'active': true},
+  ];
+
+  @override
   Future<List<CorrectiveRow>> notifications() async => updates;
 
   @override
   Future<List<CorrectiveIncident>> list(
     String actor, {
     bool admin = false,
-  }) async => [incident];
+  }) async => [incident, ...extraIncidents];
+
+  @override
+  Future<CorrectiveRow?> site(String id) async => null;
+
+  @override
+  Future<CorrectiveRow> saveSite(String id, CorrectiveRow payload) async {
+    expect(id, 'facility');
+    return configuredSite = {...payload, 'qr_token': 'test-token'};
+  }
 
   @override
   Future<CorrectiveDetail> detail(String id) async =>
@@ -102,6 +120,7 @@ class _CorrectiveFixture extends CorrectiveRepository {
   @override
   Future<CorrectiveRow> catalog() async => {
     'facilities': [
+      ...extraFacilities,
       {
         'id': 'facility',
         'label': 'Library',
@@ -213,9 +232,11 @@ Future<void> _openAdminQueue(
   await tester.pumpWidget(
     MaterialApp(
       theme: buildAppTheme(),
-      home: CorrectiveAdmin(
-        repository: repository,
-        administratorId: repository.actor,
+      home: Scaffold(
+        body: CorrectiveAdmin(
+          repository: repository,
+          administratorId: repository.actor,
+        ),
       ),
     ),
   );
@@ -335,18 +356,222 @@ void main() {
         .bodyMedium
         ?.fontFamily;
 
-    await tester.tap(find.text('Corrective Maintenance'));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(find.byType(CorrectiveAdmin)).width, 1280);
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'All incidents'));
+    expect(tester.getSize(find.byType(CorrectiveAdmin)).width, 1034);
+    expect(find.text('Corrective Maintenance'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
     final correctiveFont = Theme.of(
-      tester.element(find.text('Incident command centre')),
+      tester.element(find.byType(CorrectiveAdmin)),
     ).textTheme.bodyMedium?.fontFamily;
     expect(correctiveFont, dashboardFont);
-    await _tapVisible(tester, find.text('Burst pipe'));
-    expect(find.text('Review and approve'), findsOneWidget);
-    await tester.tap(find.byTooltip('Back'));
+    await tester.tap(find.text('Campus / Library'));
     await tester.pumpAndSettle();
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('Review and approve'), findsOneWidget);
+    await tester.tap(find.text('History'));
+    await tester.pumpAndSettle();
+    expect(find.text('Incident history'), findsOneWidget);
+    expect(find.text('Review and approve'), findsNothing);
+    await tester.tap(find.text('Back to incidents'));
+    await tester.pumpAndSettle();
+    expect(find.text('Burst pipe'), findsOneWidget);
+
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'Assign work'));
+    expect(find.textContaining('No repairs need assignment'), findsOneWidget);
+    expect(find.text('Burst pipe'), findsNothing);
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'Review reports'));
+    expect(find.text('Burst pipe'), findsOneWidget);
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'Analytics'));
+    expect(find.text('Corrective analytics'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'Settings'));
+    expect(find.text('Facility check-in settings'), findsOneWidget);
+    expect(find.text('Maintenance categories'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    repository.extraFacilities = [
+      for (var i = 0; i < 2000; i++)
+        {'id': 'room-$i', 'label': 'Block A / Room $i', 'can_manage': true},
+      {
+        'id': 'restricted',
+        'label': 'Library restricted store',
+        'can_manage': false,
+      },
+    ];
+    await tester.tap(find.text('Facility check-in settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Block A / Room 0'), findsNothing);
+    final facilitySearch = find.widgetWithText(
+      TextField,
+      'Search for a facility',
+    );
+    await tester.enterText(facilitySearch, 'library');
+    await tester.pumpAndSettle();
+    expect(find.text('Library restricted store'), findsNothing);
+    await tester.tap(find.text('Library'));
+    await tester.pumpAndSettle();
+    expect(find.text('Use current location'), findsOneWidget);
+    expect(find.text('Latitude'), findsNothing);
+    final pinField = find.widgetWithText(TextFormField, 'Paste a map pin');
+    await tester.enterText(pinField, '91, 101.728');
+    await tester.tap(find.text('Save site'));
+    await tester.pumpAndSettle();
+    expect(repository.configuredSite, isNull);
+    await tester.enterText(pinField, '3.215, 101.728');
+    await tester.tap(find.text('Save site'));
+    await tester.pumpAndSettle();
+    expect(repository.configuredSite?['latitude'], 3.215);
+    expect(repository.configuredSite?['longitude'], 101.728);
+    expect(repository.configuredSite?['radius_m'], 60);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, find.widgetWithText(ListTile, 'All incidents'));
+    await tester.tap(find.text('Report an incident'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.byType(IncidentReportScreen), findsOneWidget);
+    await tester.tap(find.byTooltip('Back to incidents'));
+    await tester.pumpAndSettle();
+    expect(find.text('Burst pipe'), findsOneWidget);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 500));
+    await tester.pumpAndSettle();
+    await _tapVisible(
+      tester,
+      find.widgetWithText(ListTile, 'Account management'),
+    );
     expect(find.text('Worker accounts'), findsOneWidget);
+  });
+
+  testWidgets('The admin incident list defaults to every status', (
+    tester,
+  ) async {
+    final repository = _CorrectiveFixture('admin', status: 'reported');
+    repository.extraIncidents.addAll([
+      CorrectiveIncident({
+        ...repository.incident.data,
+        'id': 'archived-case',
+        'title': 'Archived repair',
+        'status': 'resolved',
+        'archived_at': '2026-11-13T04:00:00Z',
+      }),
+      CorrectiveIncident({
+        ...repository.incident.data,
+        'id': 'withdrawn-case',
+        'title': 'Withdrawn repair',
+        'status': 'dismissed',
+        'withdrawn_at': '2026-11-13T04:00:00Z',
+      }),
+    ]);
+    await _openAdminQueue(tester, repository);
+    expect(find.text('All statuses'), findsOneWidget);
+    expect(find.text('Burst pipe'), findsOneWidget);
+    expect(find.text('Archived repair'), findsOneWidget);
+    expect(find.text('Withdrawn repair'), findsOneWidget);
+    await tester.tap(find.text('All statuses'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Active incidents'));
+    await tester.pumpAndSettle();
+    expect(find.text('Burst pipe'), findsOneWidget);
+    expect(find.text('Archived repair'), findsNothing);
+    expect(find.text('Withdrawn repair'), findsNothing);
+  });
+
+  testWidgets('Admin filters open a compact report date dialog', (
+    tester,
+  ) async {
+    final repository = _CorrectiveFixture('admin', status: 'reported');
+    repository.extraIncidents.add(
+      CorrectiveIncident({
+        ...repository.incident.data,
+        'id': 'medium-case',
+        'title': 'Leaking tap',
+        'urgency': 'Medium',
+      }),
+    );
+    await _openAdminQueue(tester, repository);
+    expect(find.text('All priorities'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All priorities'), findsOneWidget);
+    await tester.tap(find.text('Select report dates'));
+    await tester.pumpAndSettle();
+    final dateDialog = find.descendant(
+      of: find.byType(DateRangePickerDialog),
+      matching: find.byType(Dialog),
+    );
+    final size = tester.getSize(dateDialog);
+    expect(size.width, lessThanOrEqualTo(488));
+    expect(size.height, lessThanOrEqualTo(580));
+    expect(find.text('Apply dates'), findsOneWidget);
+    final today = find
+        .descendant(
+          of: dateDialog,
+          matching: find.text(DateTime.now().day.toString()),
+        )
+        .hitTestable()
+        .first;
+    await tester.tap(today);
+    await tester.pumpAndSettle();
+    await tester.tap(today);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply dates'));
+    await tester.pumpAndSettle();
+    expect(dateDialog, findsNothing);
+    expect(find.text('Filters (1)'), findsOneWidget);
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All priorities'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Medium').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
+    expect(find.text('Leaking tap'), findsOneWidget);
+    expect(find.text('Burst pipe'), findsNothing);
+    final mediumBadge = find.widgetWithText(CorrectiveBadge, 'Medium');
+    expect(
+      tester.widget<CorrectiveBadge>(mediumBadge).foreground,
+      const Color(0xFFAD4400),
+    );
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All priorities'), findsOneWidget);
+    expect(find.text('Burst pipe'), findsOneWidget);
+  });
+
+  testWidgets('Analytics can exclude demo incidents', (tester) async {
+    final repository = _CorrectiveFixture('admin', status: 'reported');
+    final demo = CorrectiveIncident({
+      ...repository.incident.data,
+      'title': '[Demo] Broken chair',
+      'triage': {'demo_seed': 'test'},
+      'created_at': '2026-10-31T16:15:00Z',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CorrectiveAnalyticsScreen([demo], onRefresh: () {}),
+        ),
+      ),
+    );
+    expect(find.text('1 demo report included'), findsOneWidget);
+    expect(find.text('Reports by month'), findsOneWidget);
+    expect(find.byTooltip('November 2026: 1 report'), findsOneWidget);
+    expect(find.byTooltip('October 2026: 0 reports'), findsOneWidget);
+    expect(
+      find.text(
+        'No reports are available for the selected period and filters.',
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.text('Include demo reports'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 demo report included'), findsNothing);
+    expect(find.text('Reports by month'), findsNothing);
+    expect(
+      find.text(
+        'No reports are available for the selected period and filters.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Intake displays triage and requires approval before dispatch', (
@@ -636,7 +861,7 @@ void main() {
         status: 'submitted',
       );
       await _openAdminQueue(tester, repository);
-      expect(find.text('Incident command centre'), findsOneWidget);
+      expect(find.text('All incidents'), findsOneWidget);
       await _tapVisible(tester, find.text('Burst pipe'));
       await _tapVisible(tester, find.text('Approve and resolve'));
       await tester.enterText(

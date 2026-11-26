@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
-import '../../core/widgets/curved_back_button.dart';
+import '../preventive/admin/admin_widgets.dart';
 import 'corrective_repository.dart';
 import 'corrective_widgets.dart';
 
 class CorrectiveCategoriesScreen extends StatefulWidget {
-  const CorrectiveCategoriesScreen(this.repository, {super.key});
+  const CorrectiveCategoriesScreen(
+    this.repository, {
+    super.key,
+    required this.onConfigureSite,
+  });
   final CorrectiveRepository repository;
+  final VoidCallback onConfigureSite;
 
   @override
   State<CorrectiveCategoriesScreen> createState() =>
@@ -127,54 +132,64 @@ class _CorrectiveCategoriesScreenState
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: CurvedBackButton.forRoute(context),
-      title: const Text('Maintenance categories'),
-    ),
-    body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: FutureBuilder(
-            future: _categories,
-            builder: (context, snapshot) => ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1080),
+      child: FutureBuilder(
+        future: _categories,
+        builder: (context, snapshot) => ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const AdminHeading('Corrective settings'),
+            CorrectivePanel(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                leading: const Icon(Icons.qr_code_2),
+                title: const Text('Facility check-in settings'),
+                subtitle: const Text(
+                  'Set where workers check in and create the facility QR code.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: widget.onConfigureSite,
+              ),
+            ),
+            correctiveGap(20),
+            AdminHeading(
+              'Maintenance categories',
+              actions: [
                 FilledButton.icon(
                   onPressed: _saving ? null : () => _edit(null),
                   icon: const Icon(Icons.add),
                   label: const Text('Add category'),
                 ),
-                correctiveGap(),
-                if (_error case final error?) CorrectiveMessage(error),
-                if (snapshot.hasError)
-                  CorrectiveMessage(
-                    correctiveError(snapshot.error!),
-                    onRetry: _refresh,
-                  )
-                else if (!snapshot.hasData)
-                  const LinearProgressIndicator()
-                else
-                  for (final category in snapshot.data!) ...[
-                    CorrectivePanel(
-                      padding: EdgeInsets.zero,
-                      child: ListTile(
-                        onTap: _saving ? null : () => _edit(category),
-                        title: Text(category['name'] as String),
-                        subtitle: Text(
-                          '${category['team']} · ${category['worker_role'] ?? 'Role selected at dispatch'}',
-                        ),
-                        trailing: Text(
-                          category['active'] == true ? 'Active' : 'Inactive',
-                        ),
-                      ),
-                    ),
-                    correctiveGap(8),
-                  ],
               ],
             ),
-          ),
+            if (_error case final error?) CorrectiveMessage(error),
+            if (snapshot.hasError)
+              CorrectiveMessage(
+                correctiveError(snapshot.error!),
+                onRetry: _refresh,
+              )
+            else if (!snapshot.hasData)
+              const LinearProgressIndicator()
+            else
+              for (final category in snapshot.data!) ...[
+                CorrectivePanel(
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
+                    onTap: _saving ? null : () => _edit(category),
+                    title: Text(category['name'] as String),
+                    subtitle: Text(
+                      '${category['team']} · ${category['worker_role'] ?? 'Role selected at dispatch'}',
+                    ),
+                    trailing: Text(
+                      category['active'] == true ? 'Active' : 'Inactive',
+                    ),
+                  ),
+                ),
+                correctiveGap(8),
+              ],
+          ],
         ),
       ),
     ),

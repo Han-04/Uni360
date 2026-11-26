@@ -21,10 +21,12 @@ class IncidentReportScreen extends StatefulWidget {
     super.key,
     this.pending,
     this.administrator = false,
+    this.onExit,
   });
   final CorrectiveRepository repository;
   final CorrectiveIncident? pending;
   final bool administrator;
+  final ValueChanged<IncidentReportResult?>? onExit;
 
   @override
   State<IncidentReportScreen> createState() => _IncidentReportScreenState();
@@ -53,6 +55,14 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  void _exit(IncidentReportResult? result) {
+    if (widget.onExit case final exit?) {
+      exit(result);
+    } else {
+      Navigator.of(context).pop(result);
+    }
+  }
 
   Future<void> _chooseEvidence() => showModalBottomSheet<void>(
     context: context,
@@ -358,7 +368,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           'photo': _stagedPath,
         });
         _submitted = true;
-        if (mounted) Navigator.of(context).pop((id: _id, openDetails: false));
+        if (mounted) _exit((id: _id, openDetails: false));
         return;
       }
       await widget.repository.report(report, photo: _stagedPath);
@@ -389,7 +399,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
         ),
       );
       if (mounted) {
-        Navigator.of(context).pop((id: _id, openDetails: track == true));
+        _exit((id: _id, openDetails: track == true));
       }
     } on Exception catch (error) {
       if (mounted) {
@@ -418,7 +428,13 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      leading: CurvedBackButton.forRoute(context),
+      leading: widget.onExit == null
+          ? CurvedBackButton.forRoute(context)
+          : IconButton(
+              icon: CurvedBackButton.icon,
+              tooltip: 'Back to incidents',
+              onPressed: _busy ? null : () => _exit(null),
+            ),
       title: Text(
         widget.pending == null ? 'Report an incident' : 'Edit pending report',
       ),

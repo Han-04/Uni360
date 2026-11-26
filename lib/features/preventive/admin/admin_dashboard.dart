@@ -7,6 +7,8 @@ import '../../../core/widgets/curved_back_button.dart';
 import '../../../shared/account/account.dart';
 import '../../../shared/account/account_controller.dart';
 import '../../../shared/account/account_repository.dart';
+import '../../corrective/corrective_admin.dart';
+import '../../corrective/corrective_repository.dart';
 import 'admin_accounts.dart';
 import 'admin_approvals.dart';
 import 'admin_catalog.dart';
@@ -20,11 +22,11 @@ class AdminDashboard extends StatelessWidget {
     super.key,
     required this.accounts,
     required this.data,
-    this.openCorrective,
+    this.corrective,
   });
   final AccountController accounts;
   final AdminData data;
-  final void Function(BuildContext, Account)? openCorrective;
+  final CorrectiveRepository? corrective;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -59,7 +61,7 @@ class AdminDashboard extends StatelessWidget {
         data: data,
         account: account,
         signOut: accounts.signOut,
-        openCorrective: openCorrective,
+        corrective: corrective,
       );
     },
   );
@@ -301,12 +303,12 @@ class _Workspace extends StatefulWidget {
     required this.account,
     required this.data,
     required this.signOut,
-    this.openCorrective,
+    this.corrective,
   });
   final Account account;
   final AdminData data;
   final VoidCallback signOut;
-  final void Function(BuildContext, Account)? openCorrective;
+  final CorrectiveRepository? corrective;
 
   @override
   State<_Workspace> createState() => _WorkspaceState();
@@ -314,6 +316,8 @@ class _Workspace extends StatefulWidget {
 
 class _WorkspaceState extends State<_Workspace> {
   int index = 0;
+  CorrectiveAdminPage? correctivePage;
+  int _correctiveSelection = 0;
   int overdueCount = 0;
   Timer? overdueTimer;
   static const labels = [
@@ -386,34 +390,60 @@ class _WorkspaceState extends State<_Workspace> {
                         : Icon(icons[i], color: Colors.white70),
                     title: Text(labels[i]),
                     textColor: Colors.white,
-                    selected: i == index,
+                    selected: correctivePage == null && i == index,
                     selectedColor: Colors.white,
                     selectedTileColor: Colors.white12,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                     onTap: () {
-                      setState(() => index = i);
+                      setState(() {
+                        index = i;
+                        correctivePage = null;
+                      });
                       if (i == 6) unawaited(refreshOverdueCount());
                       if (compact) Navigator.of(context).pop();
                     },
                   ),
-                if (widget.openCorrective case final open?)
-                  ListTile(
-                    leading: const Icon(
-                      Icons.handyman_outlined,
-                      color: Colors.white70,
-                    ),
-                    title: const Text('Corrective Maintenance'),
-                    textColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    onTap: () {
-                      if (compact) Navigator.of(context).pop();
-                      open(context, widget.account);
-                    },
+                if (widget.corrective != null) ...[
+                  const Divider(
+                    color: Colors.white24,
+                    indent: 10,
+                    endIndent: 10,
                   ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(12, 10, 10, 6),
+                    child: Text(
+                      'Corrective Maintenance',
+                      style: TextStyle(
+                        color: Color(0xFFADE2DC),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  for (final page in CorrectiveAdminPage.values)
+                    ListTile(
+                      key: ValueKey(('corrective-nav', page)),
+                      visualDensity: VisualDensity.compact,
+                      leading: Icon(page.icon, size: 20, color: Colors.white70),
+                      title: Text(page.label),
+                      textColor: Colors.white,
+                      selected: correctivePage == page,
+                      selectedColor: Colors.white,
+                      selectedTileColor: Colors.white12,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      onTap: () {
+                        setState(() {
+                          if (correctivePage == page) _correctiveSelection++;
+                          correctivePage = page;
+                        });
+                        if (compact) Navigator.of(context).pop();
+                      },
+                    ),
+                ],
               ],
             ),
           ),
@@ -453,6 +483,7 @@ class _WorkspaceState extends State<_Workspace> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
+    final corrective = widget.corrective;
     final superAdmin = widget.account.role == AccountRole.superAdministrator;
     return LayoutBuilder(
       builder: (context, size) {
@@ -487,7 +518,14 @@ class _WorkspaceState extends State<_Workspace> {
                 if (!compact)
                   SizedBox(width: 246, child: sidebar(compact: false)),
                 Expanded(
-                  child: index == 2
+                  child: corrective != null && correctivePage != null
+                      ? CorrectiveAdmin(
+                          key: ValueKey(_correctiveSelection),
+                          repository: corrective,
+                          administratorId: widget.account.id,
+                          page: correctivePage!,
+                        )
+                      : index == 2
                       ? section
                       : SingleChildScrollView(
                           key: ValueKey(index),

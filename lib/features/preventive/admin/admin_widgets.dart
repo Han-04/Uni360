@@ -91,6 +91,7 @@ class AdminTable extends StatelessWidget {
     this.framed = true,
     this.darkHeading = false,
     this.emptyIllustration,
+    this.onRowTap,
   });
   final List<String> headers;
   final List<List<Widget>> rows;
@@ -98,6 +99,7 @@ class AdminTable extends StatelessWidget {
   final bool framed;
   final bool darkHeading;
   final String? emptyIllustration;
+  final ValueChanged<int>? onRowTap;
 
   @override
   Widget build(BuildContext context) {
@@ -109,6 +111,7 @@ class AdminTable extends StatelessWidget {
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: size.maxWidth),
             child: DataTable(
+              showCheckboxColumn: false,
               headingRowColor: WidgetStatePropertyAll(
                 darkHeading ? Colors.black : AppColors.background,
               ),
@@ -130,8 +133,14 @@ class AdminTable extends StatelessWidget {
                     ],
                   )
                 else
-                  for (final row in rows)
-                    DataRow(cells: row.map(DataCell.new).toList()),
+                  for (final (index, row) in rows.indexed)
+                    DataRow.byIndex(
+                      index: index,
+                      onSelectChanged: onRowTap == null
+                          ? null
+                          : (_) => onRowTap!(index),
+                      cells: row.map(DataCell.new).toList(),
+                    ),
               ],
             ),
           ),

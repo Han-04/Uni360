@@ -83,6 +83,7 @@ class CorrectiveIncident {
   String get statusLabel =>
       !withdrawn ? correctiveStatuses[status] ?? status : 'Withdrawn';
   bool get archived => data['archived_at'] != null;
+  bool get closed => withdrawn || closedCorrectiveStatuses.contains(status);
   bool canEditReport(String? actorId) =>
       actorId == reporterId &&
       !withdrawn &&
@@ -96,6 +97,7 @@ class CorrectiveIncident {
   List<String> get priorReportPhotos =>
       (data['prior_report_photos'] as List? ?? const []).cast<String>();
   CorrectiveRow? get triage => data['triage'] as CorrectiveRow?;
+  bool get isDemo => triage?['demo_seed'] != null || title.startsWith('[Demo]');
   String? get photoAssessment => correctivePhotoAssessment(triage);
   String? get photoCategory => triage?['photo_category'] as String?;
   String? get photoPriority => triage?['photo_priority'] as String?;
@@ -104,8 +106,7 @@ class CorrectiveIncident {
   DateTime? get due => DateTime.tryParse('${data['due_at']}');
   DateTime? get target => DateTime.tryParse('${data['target_at']}');
   bool get overdue =>
-      !closedCorrectiveStatuses.contains(status) &&
-      (target?.isBefore(DateTime.now()) ?? false);
+      !closed && !archived && (target?.isBefore(DateTime.now()) ?? false);
   DateTime? get resolved => DateTime.tryParse('${data['resolved_at']}');
   int get attempt => data['attempt'] as int;
   List<String> get checklist => (data['checklist'] as List).cast<String>();

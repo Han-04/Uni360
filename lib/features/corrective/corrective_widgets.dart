@@ -149,6 +149,14 @@ class CorrectiveBadge extends StatelessWidget {
     this.foreground,
     this.background,
   });
+  factory CorrectiveBadge.priority(String urgency) => urgency == 'Medium'
+      ? const CorrectiveBadge(
+          'Medium',
+          foreground: Color(0xFFAD4400),
+          background: Color(0xFFFFEBD9),
+        )
+      : CorrectiveBadge(urgency, alert: correctiveHighPriority(urgency));
+
   factory CorrectiveBadge.status(CorrectiveIncident incident) {
     final (foreground, background) = switch (incident.status) {
       _ when incident.withdrawn => (_withdrawnInk, _withdrawnFill),
@@ -248,10 +256,7 @@ class IncidentTile extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      CorrectiveBadge(
-                        incident.urgency,
-                        alert: correctiveHighPriority(incident.urgency),
-                      ),
+                      CorrectiveBadge.priority(incident.urgency),
                       CorrectiveBadge.status(incident),
                     ],
                   ),
@@ -531,9 +536,15 @@ class CorrectiveAttachmentHistory extends StatelessWidget {
 }
 
 class IncidentSummary extends StatelessWidget {
-  const IncidentSummary(this.incident, this.repository, {super.key});
+  const IncidentSummary(
+    this.incident,
+    this.repository, {
+    super.key,
+    this.showHeading = true,
+  });
   final CorrectiveIncident incident;
   final CorrectiveRepository repository;
+  final bool showHeading;
 
   @override
   Widget build(BuildContext context) => CorrectivePanel(
@@ -544,24 +555,23 @@ class IncidentSummary extends StatelessWidget {
           spacing: 8,
           runSpacing: 7,
           children: [
-            CorrectiveBadge(incident.reference),
-            CorrectiveBadge(
-              incident.urgency,
-              alert: correctiveHighPriority(incident.urgency),
-            ),
-            CorrectiveBadge.status(incident),
+            if (showHeading) CorrectiveBadge(incident.reference),
+            CorrectiveBadge.priority(incident.urgency),
+            if (showHeading) CorrectiveBadge.status(incident),
           ],
         ),
         correctiveGap(),
-        Text(
-          incident.title,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            height: 1.15,
+        if (showHeading) ...[
+          Text(
+            incident.title,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
           ),
-        ),
-        correctiveGap(),
+          correctiveGap(),
+        ],
         Text(
           '${incident.category} · ${incident.facility}',
           style: const TextStyle(fontWeight: FontWeight.w700),
