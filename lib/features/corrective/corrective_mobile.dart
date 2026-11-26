@@ -20,7 +20,8 @@ import 'incident_report_screen.dart';
 enum CorrectiveMobileTab {
   assigned(WorkerDestination('Assigned', Icons.assignment_outlined)),
   reports(WorkerDestination('My reports', Icons.description_outlined)),
-  updates(WorkerDestination('Updates', Icons.notifications_outlined));
+  updates(WorkerDestination('Updates', Icons.notifications_outlined)),
+  profile(WorkerDestination('Profile', Icons.person_outline));
 
   const CorrectiveMobileTab(this.destination);
   final WorkerDestination destination;
@@ -31,10 +32,12 @@ class CorrectiveMobile extends StatefulWidget {
     super.key,
     required this.repository,
     required this.account,
+    required this.profile,
     this.initialTab = CorrectiveMobileTab.assigned,
   });
   final CorrectiveRepository repository;
   final Account account;
+  final Widget profile;
   final CorrectiveMobileTab initialTab;
 
   @override
@@ -47,6 +50,7 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
     if (widget.account.role == AccountRole.worker) CorrectiveMobileTab.assigned,
     CorrectiveMobileTab.reports,
     CorrectiveMobileTab.updates,
+    CorrectiveMobileTab.profile,
   ];
   late CorrectiveMobileTab _tab = _tabs.contains(widget.initialTab)
       ? widget.initialTab
@@ -148,8 +152,11 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
   @override
   Widget build(BuildContext context) {
     final showingUpdates = _tab == CorrectiveMobileTab.updates;
+    final showingProfile = _tab == CorrectiveMobileTab.profile;
     final compact = MediaQuery.sizeOf(context).width < 375;
-    final title = showingUpdates
+    final title = showingProfile
+        ? 'My profile'
+        : showingUpdates
         ? (compact ? 'Updates' : 'Corrective updates')
         : (compact ? 'Corrective' : 'Corrective Maintenance');
     return Scaffold(
@@ -157,57 +164,54 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
         leading: CurvedBackButton.forRoute(context),
         title: Text(title),
         actions: [
-          if (showingUpdates)
+          if (!showingProfile)
             IconButton(
-              tooltip: 'Report an incident',
-              onPressed: _report,
-              icon: const Icon(Icons.add),
+              tooltip: showingUpdates ? 'Refresh updates' : 'Refresh incidents',
+              onPressed: _refreshCurrentTab,
+              icon: const Icon(Icons.refresh),
             ),
-          IconButton(
-            tooltip: showingUpdates ? 'Refresh updates' : 'Refresh incidents',
-            onPressed: _refreshCurrentTab,
-            icon: const Icon(Icons.refresh),
-          ),
         ],
       ),
       body: SafeArea(
         bottom: false,
-        child: RefreshIndicator(
-          onRefresh: _refreshCurrentTab,
-          child: ListView(
-            key: ValueKey(_tab),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-            children: showingUpdates
-                ? [
-                    CorrectiveNotifications(
-                      key: ValueKey(_updatesRefresh),
-                      repository: widget.repository,
-                      openIncident: _open,
-                      emptyState: const EmptyState(
-                        title: 'No updates yet',
-                        message:
-                            'Incident and assignment updates will appear here.',
-                        illustration: Image(
-                          image: AssetImage(
-                            'assets/notifications/empty-mailbox.png',
+        child: showingProfile
+            ? widget.profile
+            : RefreshIndicator(
+                onRefresh: _refreshCurrentTab,
+                child: ListView(
+                  key: ValueKey(_tab),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  children: showingUpdates
+                      ? [
+                          CorrectiveNotifications(
+                            key: ValueKey(_updatesRefresh),
+                            repository: widget.repository,
+                            openIncident: _open,
+                            emptyState: const EmptyState(
+                              title: 'No updates yet',
+                              message: 'Incident and assignment updates will appear here.',
+                              illustration: Image(
+                                image: AssetImage(
+                                  'assets/notifications/empty-mailbox.png',
+                                ),
+                                width: 104,
+                                height: 120,
+                                excludeFromSemantics: true,
+                              ),
+                            ),
                           ),
-                          width: 104,
-                          height: 120,
-                          excludeFromSemantics: true,
-                        ),
-                      ),
-                    ),
-                  ]
-                : _incidentList(),
-          ),
-        ),
+                        ]
+                      : _incidentList(),
+                ),
+              ),
       ),
       bottomNavigationBar: WorkerBottomNavigation(
         key: const ValueKey('corrective-footer'),
         destinations: [for (final tab in _tabs) tab.destination],
         selectedIndex: _tabs.indexOf(_tab),
         onDestinationSelected: (index) => _selectTab(_tabs[index]),
+        centerAction: _report,
       ),
     );
   }
@@ -249,12 +253,6 @@ class _CorrectiveMobileState extends State<CorrectiveMobile>
         title: assigned ? 'Incident response' : 'Reports overview',
         icon: assigned ? Icons.handyman_outlined : Icons.description_outlined,
         summary: _items == null ? null : '$open open · $resolved resolved',
-      ),
-      correctiveGap(),
-      FilledButton.icon(
-        onPressed: _report,
-        icon: const Icon(Icons.add),
-        label: const Text('Report an incident'),
       ),
       SectionHeading(assigned ? 'Assigned incidents' : 'Report history'),
       if (_loading && _items == null) const LinearProgressIndicator(),
@@ -675,6 +673,7 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
   }
 
   Future<void> _editPending(CorrectiveIncident incident) async {
+    if (!incident.canEditReport(widget.account.id)) return;
     final updated = await Navigator.of(context).push<IncidentReportResult>(
       correctivePage<IncidentReportResult>(
         context,
@@ -934,14 +933,18 @@ class _CorrectiveJobScreenState extends State<CorrectiveJobScreen> {
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
             children: [
               IncidentSummary(incident, widget.repository),
+              if (incident.reporterId == widget.account.id &&
+                  incident.priorReportPhotos.isNotEmpty) ...[
+                correctiveGap(),
+                CorrectiveAttachmentHistory(incident, widget.repository),
+              ],
               correctiveGap(),
               if (updating) const LinearProgressIndicator(),
               if (_error case final error?) ...[
                 CorrectiveMessage(error),
                 correctiveGap(),
               ],
-              if (incident.reporterId == widget.account.id &&
-                  incident.canEditReport) ...[
+              if (incident.canEditReport(widget.account.id)) ...[
                 Wrap(
                   spacing: 8,
                   children: [

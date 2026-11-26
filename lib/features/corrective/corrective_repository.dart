@@ -21,6 +21,21 @@ const correctiveCategories = [
 const correctiveUrgencies = ['Low', 'Medium', 'High', 'Critical'];
 bool correctiveHighPriority(String value) =>
     value == 'High' || value == 'Critical';
+bool correctiveIsVideo(String path) =>
+    path.endsWith('.mp4') || path.endsWith('.mov');
+
+String? correctivePhotoAssessment(CorrectiveRow? triage) {
+  final observation = triage?['observation'] as String?;
+  if (observation != null && observation.trim().isNotEmpty) return observation;
+  return switch (triage?['vision_status']) {
+    'normal' || 'device_normal' => 'No obvious visible fault in the photo.',
+    'unavailable' || 'not_configured' || 'device_unavailable' =>
+      'Photo analysis was unavailable. Uni360 used the written description.',
+    'unclear' ||
+    'device_unclear' => 'The photo was inconclusive. Staff can review it.',
+    _ => null,
+  };
+}
 
 const correctiveStatuses = {
   'reported': 'Awaiting review',
@@ -64,11 +79,13 @@ class CorrectiveIncident {
   String get category => data['category'] as String;
   String get urgency => data['urgency'] as String;
   String get status => data['status'] as String;
-  String get statusLabel => data['withdrawn_at'] == null
-      ? correctiveStatuses[status] ?? status
-      : 'Withdrawn';
+  bool get withdrawn => data['withdrawn_at'] != null;
+  String get statusLabel =>
+      !withdrawn ? correctiveStatuses[status] ?? status : 'Withdrawn';
   bool get archived => data['archived_at'] != null;
-  bool get canEditReport =>
+  bool canEditReport(String? actorId) =>
+      actorId == reporterId &&
+      !withdrawn &&
       const {'reported', 'needs_info'}.contains(status) &&
       data['approved_at'] == null;
   String get reporter => data['reporter_name'] as String;
@@ -76,6 +93,12 @@ class CorrectiveIncident {
   String? get worker => data['worker_name'] as String?;
   String? get workerId => data['worker_id'] as String?;
   String? get reportPhoto => data['report_photo'] as String?;
+  List<String> get priorReportPhotos =>
+      (data['prior_report_photos'] as List? ?? const []).cast<String>();
+  CorrectiveRow? get triage => data['triage'] as CorrectiveRow?;
+  String? get photoAssessment => correctivePhotoAssessment(triage);
+  String? get photoCategory => triage?['photo_category'] as String?;
+  String? get photoPriority => triage?['photo_priority'] as String?;
   String get description => data['description'] as String;
   DateTime get created => DateTime.parse(data['created_at'] as String);
   DateTime? get due => DateTime.tryParse('${data['due_at']}');
@@ -105,6 +128,7 @@ class CorrectiveRepository {
   CorrectiveRepository(this.client, {this._actorId});
   final SupabaseClient client;
   final String? _actorId;
+  String? get actorId => _actorId ?? client.auth.currentUser?.id;
   static const _bucket = 'corrective-evidence';
   static const _uuid = Uuid();
   SupabaseQuerySchema get _maintenance => client.schema('maintenance_api');
@@ -314,28 +338,69 @@ class CorrectiveRepository {
     );
   }
 
-  Future<String> reportReference(String id) async {
+  Future<CorrectiveRow> inspectReportEvidence(String path) async {
+    try {
+      final response = await client.functions.invoke(
+        'corrective-intake',
+        body: {'path': path, 'photo_analysis_provider': 'openrouter'},
+      );
+      final result = response.data as CorrectiveRow;
+      if (result['error'] case final String message) {
+        throw CorrectiveException(message);
+      }
+      return result;
+    } on FunctionException catch (error) {
+      final details = error.details;
+      throw CorrectiveException(
+        details is Map && details['error'] is String
+            ? details['error'] as String
+            : 'Could not check this attachment. Try again.',
+      );
+    }
+  }
+
+  Future<String> reportReceipt(String id) async {
     final row = await client
         .from('corrective_incident')
-        .select('reference')
+        .select('reference,category,urgency,status,worker_name,triage')
         .eq('id', id)
         .single();
-    return 'CM-${row['reference'].toString().padLeft(4, '0')}';
+    final reference = 'CM-${row['reference'].toString().padLeft(4, '0')}';
+    final status = correctiveStatuses[row['status']] ?? 'Report saved';
+    final worker = row['worker_name'] as String?;
+    final triage = row['triage'] as CorrectiveRow?;
+    final photoCheck = correctivePhotoAssessment(triage);
+    return [
+      '$reference · ${row['category']} · ${row['urgency']} priority',
+      worker == null ? status : 'Assigned to $worker',
+      ?photoCheck,
+    ].join('\n');
   }
 
   Future<String> upload(
     String id,
     Uint8List bytes, {
     required bool report,
+    bool video = false,
   }) async {
-    final actor = _actorId ?? client.auth.currentUser?.id;
+    final actor = actorId;
     if (actor == null) throw const CorrectiveException('Sign in to continue.');
     if (bytes.length > 10485760) {
       throw const CorrectiveException(
-        'Choose a photograph smaller than 10 MB.',
+        'Choose an attachment of 10 MB or smaller.',
       );
     }
     final (extension, mimeType) = switch (bytes) {
+      [_, _, _, _, 0x66, 0x74, 0x79, 0x70, 0x71, 0x74, 0x20, 0x20, ...]
+          when video && report =>
+        ('mov', 'video/quicktime'),
+      [_, _, _, _, 0x66, 0x74, 0x79, 0x70, ...] when video && report => (
+        'mp4',
+        'video/mp4',
+      ),
+      _ when video => throw const CorrectiveException(
+        'Choose an MP4 or MOV video.',
+      ),
       [0xff, 0xd8, 0xff, ...] => ('jpg', 'image/jpeg'),
       [0x89, 0x50, 0x4e, 0x47, ...] => ('png', 'image/png'),
       [0x52, 0x49, 0x46, 0x46, _, _, _, _, 0x57, 0x45, 0x42, 0x50, ...] => (

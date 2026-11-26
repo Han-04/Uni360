@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import 'corrective_repository.dart';
 
 const correctiveAccent = Color(0xFFC3472E);
 const correctiveTint = Color(0xFFFFEDE7);
+const _withdrawnInk = Color(0xFF9F161C);
+const _withdrawnFill = Color(0xFFFFE6E7);
+const _pendingInk = Color(0xFF755200);
+const _pendingFill = Color(0xFFFFF0A7);
+const _successInk = Color(0xFF16623A);
+const _successFill = Color(0xFFD8F5E4);
 
 MaterialPageRoute<T> correctivePage<T>(
   BuildContext context, {
@@ -135,16 +142,45 @@ class CorrectivePanel extends StatelessWidget {
 }
 
 class CorrectiveBadge extends StatelessWidget {
-  const CorrectiveBadge(this.label, {super.key, this.alert = false});
+  const CorrectiveBadge(
+    this.label, {
+    super.key,
+    this.alert = false,
+    this.foreground,
+    this.background,
+  });
+  factory CorrectiveBadge.status(CorrectiveIncident incident) {
+    final (foreground, background) = switch (incident.status) {
+      _ when incident.withdrawn => (_withdrawnInk, _withdrawnFill),
+      'reported' ||
+      'needs_info' ||
+      'inspection' ||
+      'submitted' => (_pendingInk, _pendingFill),
+      'approved' || 'resolved' => (_successInk, _successFill),
+      'escalated' ||
+      'rework' ||
+      'rejected' => (correctiveAccent, correctiveTint),
+      _ => (null, null),
+    };
+    return CorrectiveBadge(
+      incident.statusLabel,
+      foreground: foreground,
+      background: background,
+    );
+  }
+
   final String label;
   final bool alert;
+  final Color? foreground, background;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      color: alert
-          ? correctiveTint
-          : Theme.of(context).colorScheme.primary.withValues(alpha: .10),
+      color:
+          background ??
+          (alert
+              ? correctiveTint
+              : Theme.of(context).colorScheme.primary.withValues(alpha: .10)),
       borderRadius: BorderRadius.circular(30),
     ),
     child: Padding(
@@ -152,9 +188,11 @@ class CorrectiveBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          color: alert
-              ? const Color(0xFF9D3320)
-              : Theme.of(context).colorScheme.primary,
+          color:
+              foreground ??
+              (alert
+                  ? const Color(0xFF9D3320)
+                  : Theme.of(context).colorScheme.primary),
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
@@ -214,14 +252,7 @@ class IncidentTile extends StatelessWidget {
                         incident.urgency,
                         alert: correctiveHighPriority(incident.urgency),
                       ),
-                      CorrectiveBadge(
-                        incident.statusLabel,
-                        alert: {
-                          'escalated',
-                          'rework',
-                          'rejected',
-                        }.contains(incident.status),
-                      ),
+                      CorrectiveBadge.status(incident),
                     ],
                   ),
                   correctiveGap(8),
@@ -315,7 +346,9 @@ class CorrectiveHistory extends StatelessWidget {
                   child: Icon(
                     Icons.circle,
                     size: 9,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: event['event'] == 'Report withdrawn'
+                        ? _withdrawnInk
+                        : Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 Expanded(
@@ -324,7 +357,12 @@ class CorrectiveHistory extends StatelessWidget {
                     children: [
                       Text(
                         event['event'] as String,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: event['event'] == 'Report withdrawn'
+                              ? _withdrawnInk
+                              : null,
+                        ),
                       ),
                       Text(
                         '${event['actor_name']} · ${correctiveTime(DateTime.parse(event['occurred_at'] as String))}',
@@ -353,10 +391,12 @@ class CorrectivePhoto extends StatefulWidget {
     super.key,
     required this.label,
     this.thumbnail = false,
+    this.previewHeight,
   });
   final CorrectiveRepository repository;
   final String path, label;
   final bool thumbnail;
+  final double? previewHeight;
 
   @override
   State<CorrectivePhoto> createState() => _CorrectivePhotoState();
@@ -364,13 +404,14 @@ class CorrectivePhoto extends StatefulWidget {
 
 class _CorrectivePhotoState extends State<CorrectivePhoto> {
   late final _thumbnail = widget.repository.photoUrl(widget.path);
+  bool get _video => correctiveIsVideo(widget.path);
 
   void _open() {
     final photo = widget.repository.photoUrl(widget.path);
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(widget.label),
+        title: Text(_video ? 'Report video' : widget.label),
         content: SizedBox(
           width: 540,
           child: FutureBuilder(
@@ -383,6 +424,22 @@ class _CorrectivePhotoState extends State<CorrectivePhoto> {
                 return const Center(
                   heightFactor: 2,
                   child: CircularProgressIndicator(),
+                );
+              }
+              if (_video) {
+                return FilledButton.icon(
+                  onPressed: () async {
+                    final opened = await launchUrl(Uri.parse(snapshot.data!));
+                    if (!opened && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('The video could not be opened.'),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Play video'),
                 );
               }
               return InteractiveViewer(
@@ -408,10 +465,10 @@ class _CorrectivePhotoState extends State<CorrectivePhoto> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.thumbnail) {
+    if (!widget.thumbnail && (widget.previewHeight == null || _video)) {
       return OutlinedButton.icon(
-        icon: const Icon(Icons.photo_outlined),
-        label: Text(widget.label),
+        icon: Icon(_video ? Icons.videocam_outlined : Icons.photo_outlined),
+        label: Text(_video ? 'Report video' : widget.label),
         onPressed: _open,
       );
     }
@@ -423,15 +480,21 @@ class _CorrectivePhotoState extends State<CorrectivePhoto> {
         color: AppColors.background,
         child: InkWell(
           onTap: _open,
-          child: SizedBox.square(
-            dimension: 70,
+          child: SizedBox(
+            width: widget.previewHeight == null ? 70 : double.infinity,
+            height: widget.previewHeight ?? 70,
             child: FutureBuilder(
               future: _thumbnail,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Photo preview unavailable'));
+                }
                 if (!snapshot.hasData) return const Icon(Icons.photo_outlined);
                 return Image.network(
                   snapshot.data!,
-                  fit: BoxFit.cover,
+                  fit: widget.previewHeight == null
+                      ? BoxFit.cover
+                      : BoxFit.contain,
                   errorBuilder: (_, _, _) => const Icon(Icons.photo_outlined),
                 );
               },
@@ -441,6 +504,30 @@ class _CorrectivePhotoState extends State<CorrectivePhoto> {
       ),
     );
   }
+}
+
+class CorrectiveAttachmentHistory extends StatelessWidget {
+  const CorrectiveAttachmentHistory(
+    this.incident,
+    this.repository, {
+    super.key,
+  });
+  final CorrectiveIncident incident;
+  final CorrectiveRepository repository;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    title: const Text('Previous report attachments'),
+    children: [
+      for (final path in incident.priorReportPhotos)
+        CorrectivePhoto(
+          repository,
+          path,
+          key: ValueKey(path),
+          label: 'Previous report photograph',
+        ),
+    ],
+  );
 }
 
 class IncidentSummary extends StatelessWidget {
@@ -462,7 +549,7 @@ class IncidentSummary extends StatelessWidget {
               incident.urgency,
               alert: correctiveHighPriority(incident.urgency),
             ),
-            CorrectiveBadge(incident.statusLabel),
+            CorrectiveBadge.status(incident),
           ],
         ),
         correctiveGap(),
@@ -489,7 +576,23 @@ class IncidentSummary extends StatelessWidget {
         if (incident.data['feedback_rating'] case final int rating)
           Text('Reporter feedback $rating/5'),
         correctiveGap(),
+        const Text(
+          'Reporter description',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         Text(incident.description),
+        if (incident.photoAssessment case final assessment?) ...[
+          correctiveGap(),
+          const Text(
+            'Photo analysis',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          Text(assessment),
+          if (incident.photoCategory case final category?)
+            Text('Photo category · $category'),
+          if (incident.photoPriority case final priority?)
+            Text('Photo priority · $priority'),
+        ],
         correctiveGap(),
         Text(
           'Reported by ${incident.reporter} · ${correctiveTime(incident.created)}',

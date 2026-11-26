@@ -40,6 +40,13 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
   bool get _worker => widget.account.role == AccountRole.worker;
   bool get _reporter => widget.account.role == AccountRole.reporter;
 
+  Widget _profile() => AccountProfileScreen(
+    controller: widget.accounts,
+    workforceDetails: widget.workforceDetails,
+    loadWorkerProfile: widget.loadWorkerProfile,
+    workerStatus: widget.workerStatus,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +80,7 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
         builder: (_) => CorrectiveMobile(
           repository: widget.corrective,
           account: widget.account,
+          profile: _profile(),
           initialTab: tab,
         ),
       ),
@@ -135,12 +143,7 @@ class _CampusWorkspaceState extends State<CampusWorkspace> {
                       title: const Text('My profile'),
                       backgroundColor: _worker ? WorkerColors.background : null,
                     ),
-                    body: AccountProfileScreen(
-                      controller: widget.accounts,
-                      workforceDetails: widget.workforceDetails,
-                      loadWorkerProfile: widget.loadWorkerProfile,
-                      workerStatus: widget.workerStatus,
-                    ),
+                    body: _profile(),
                   ),
                 ),
               ),

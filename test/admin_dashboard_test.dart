@@ -310,7 +310,7 @@ void main() {
   testWidgets('Workforce profile styles columns and illustrates an empty day', (
     tester,
   ) async {
-    await enterAdmin(
+    await _enterAdmin(
       tester,
       AccountRole.administrator,
       data: _WorkforceProfileFixture(),
@@ -404,7 +404,7 @@ void main() {
   testWidgets('Workforce filters the directory by job role and search', (
     tester,
   ) async {
-    await enterAdmin(tester, AccountRole.administrator);
+    await _enterAdmin(tester, AccountRole.administrator);
     await tester.tap(find.text('Workforce management'));
     await tester.pumpAndSettle();
     final workforce = tester.widget<DataTable>(find.byType(DataTable));
@@ -741,7 +741,7 @@ void main() {
   testWidgets('Empty admin lists display the task illustration and a message', (
     tester,
   ) async {
-    await enterAdmin(
+    await _enterAdmin(
       tester,
       AccountRole.administrator,
       data: _TestAdministration(emptyLists: true),

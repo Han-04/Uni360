@@ -682,14 +682,16 @@ class _AdminIncidentState extends State<_AdminIncident> {
   ) {
     final triage = options['triage'] as CorrectiveRow? ?? const {};
     final matches = correctiveRows(options['duplicates']);
-    final evidenceQuality = switch (triage['evidence_quality']) {
-      'clear' => 'Photo passed exposure and contrast checks.',
-      'dark' => 'The photo appears too dark.',
-      'bright' => 'The photo appears overexposed.',
-      'low_contrast' => 'The photo has low contrast.',
-      'missing' => 'No report photo is attached.',
-      _ => 'Photo quality requires a visual check.',
-    };
+    final evidenceQuality = triage['media_kind'] == 'video'
+        ? 'Video duration verified.'
+        : switch (triage['evidence_quality']) {
+            'clear' => 'Photo passed exposure and contrast checks.',
+            'dark' => 'The photo appears too dark.',
+            'bright' => 'The photo appears overexposed.',
+            'low_contrast' => 'The photo has low contrast.',
+            'missing' => 'No report photo is attached.',
+            _ => 'Photo quality requires a visual check.',
+          };
     return CorrectivePanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -702,11 +704,9 @@ class _AdminIncidentState extends State<_AdminIncident> {
           Text(
             'Suggested priority · ${triage['priority'] ?? incident.urgency}',
           ),
-          Text(
-            triage['confidence'] == null
-                ? 'Manual classification recommended'
-                : 'Text model confidence · ${triage['confidence']}%',
-          ),
+          if (triage['confidence'] != null)
+            Text('Text model confidence · ${triage['confidence']}%'),
+          if (triage['routing_reason'] case final String reason) Text(reason),
           Text(evidenceQuality),
           if (triage['review_required'] == true)
             const Text(
@@ -992,6 +992,32 @@ class _AdminIncidentState extends State<_AdminIncident> {
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
         children: [
           IncidentSummary(incident, widget.repository),
+          if (incident.canEditReport(widget.repository.actorId))
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: disabled
+                    ? null
+                    : () async {
+                        final result = await Navigator.of(context).push(
+                          correctivePage<IncidentReportResult>(
+                            context,
+                            builder: (_) => IncidentReportScreen(
+                              widget.repository,
+                              pending: incident,
+                              administrator: true,
+                            ),
+                          ),
+                        );
+                        if (mounted && result != null) {
+                          widget.onChange();
+                          _refresh();
+                        }
+                      },
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit pending report'),
+              ),
+            ),
           if (options != null &&
               const {
                 'resolved',
@@ -1019,23 +1045,8 @@ class _AdminIncidentState extends State<_AdminIncident> {
                 ),
               ),
             ),
-          if (options != null &&
-              (incident.data['prior_report_photos'] as List?)?.isNotEmpty ==
-                  true)
-            ExpansionTile(
-              title: const Text('Previous report photographs'),
-              children: [
-                for (final path
-                    in (incident.data['prior_report_photos'] as List)
-                        .cast<String>())
-                  CorrectivePhoto(
-                    widget.repository,
-                    path,
-                    key: ValueKey(path),
-                    label: 'Previous report photo',
-                  ),
-              ],
-            ),
+          if (options != null && incident.priorReportPhotos.isNotEmpty)
+            CorrectiveAttachmentHistory(incident, widget.repository),
           if (kIsWeb && options != null)
             Align(
               alignment: Alignment.centerLeft,

@@ -41,16 +41,73 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
   late Future<CorrectiveRow> _catalog = widget.repository.catalog();
   late String? _facility = widget.pending?.facilityId;
   String? _error, _stagedPath, _qr;
-  late String? _category = widget.pending?.category ?? 'Other';
-  late String _urgency = widget.pending?.urgency ?? 'Medium';
   Uint8List? _photo;
+  Uint8List? _video;
+  String? _videoName;
   CorrectiveRow? _photoDiagnostics;
   bool _busy = false;
   bool _submitted = false;
+  bool get _canOpenForm =>
+      widget.pending?.canEditReport(widget.repository.actorId) ?? true;
   bool get _nativeCamera =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  Future<void> _chooseEvidence() => showModalBottomSheet<void>(
+    context: context,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (kIsWeb || _nativeCamera)
+            _evidenceOption(
+              sheet,
+              'Take a photo',
+              Icons.photo_camera_outlined,
+              ImageSource.camera,
+            ),
+          if (_nativeCamera)
+            _evidenceOption(
+              sheet,
+              'Record a video',
+              Icons.videocam_outlined,
+              ImageSource.camera,
+              video: true,
+            ),
+          _evidenceOption(
+            sheet,
+            'Choose a photo',
+            Icons.image_outlined,
+            ImageSource.gallery,
+          ),
+          _evidenceOption(
+            sheet,
+            'Choose a video',
+            Icons.video_library_outlined,
+            ImageSource.gallery,
+            video: true,
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _evidenceOption(
+    BuildContext sheet,
+    String label,
+    IconData icon,
+    ImageSource source, {
+    bool video = false,
+  }) => ListTile(
+    leading: Icon(icon),
+    title: Text(label),
+    subtitle: video ? const Text('Up to 30 seconds · MP4 or MOV') : null,
+    onTap: () {
+      Navigator.pop(sheet);
+      unawaited(_pickEvidence(source, video: video));
+    },
+  );
 
   Future<void> _scan() async {
     final code = await Navigator.of(context).push(
@@ -124,33 +181,56 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
     super.dispose();
   }
 
-  Future<void> _choosePhoto(ImageSource source) async {
+  void _clearEvidence() {
+    if (_stagedPath case final path?) {
+      unawaited(widget.repository.discardDraft(path));
+    }
+    _photo = null;
+    _video = null;
+    _videoName = null;
+    _photoDiagnostics = null;
+    _stagedPath = null;
+  }
+
+  Future<void> _pickEvidence(ImageSource source, {required bool video}) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final file = await ImagePicker().pickImage(
-        source: source,
-        maxWidth: 1600,
-        imageQuality: 82,
-      );
+      final picker = ImagePicker();
+      final file = video
+          ? await picker.pickVideo(
+              source: source,
+              maxDuration: const Duration(seconds: 30),
+            )
+          : await picker.pickImage(
+              source: source,
+              maxWidth: 1600,
+              imageQuality: 82,
+            );
       if (file == null) return;
-      final bytes = await file.readAsBytes();
-      final diagnostics = await inspectCorrectivePhoto(bytes);
-      if (!mounted) return;
-      if (_stagedPath case final path?) {
-        unawaited(widget.repository.discardDraft(path));
+      if (await file.length() > 10 * 1024 * 1024) {
+        throw const CorrectiveException(
+          'Choose an attachment of 10 MB or smaller.',
+        );
       }
+      final bytes = await file.readAsBytes();
+      final diagnostics = video ? null : await inspectCorrectivePhoto(bytes);
+      if (!mounted) return;
       setState(() {
-        _photo = bytes;
+        _clearEvidence();
+        _photo = video ? null : bytes;
+        _video = video ? bytes : null;
+        _videoName = video ? file.name : null;
         _photoDiagnostics = diagnostics;
-        _stagedPath = null;
       });
+    } on CorrectiveException catch (error) {
+      if (mounted) setState(() => _error = error.message);
     } on Exception {
       if (mounted) {
         setState(
-          () => _error = 'The photograph could not be opened. Check camera permissions or choose a different image.',
+          () => _error = 'The attachment could not be opened. Check permissions or choose another file.',
         );
       }
     } finally {
@@ -159,12 +239,19 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_form.currentState!.validate() || _facility == null || _busy) return;
+    if (!_canOpenForm ||
+        !_form.currentState!.validate() ||
+        _facility == null ||
+        _busy) {
+      return;
+    }
     if (!widget.administrator &&
         _photo == null &&
+        _video == null &&
         widget.pending?.reportPhoto == null) {
       setState(
-        () => _error = 'Attach a photograph of the fault before continuing.',
+        () => _error =
+            'Attach a photo or a video of the fault before continuing.',
       );
       return;
     }
@@ -201,7 +288,10 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                 ),
                 Text(_description.text.trim()),
                 correctiveGap(),
-                Text('${_category ?? 'Other'} · $_urgency priority'),
+                const Text(
+                  'Uni360 assesses category and priority when you submit.',
+                ),
+                if (_videoName case final name?) Text('Video: $name'),
                 if (_photo case final photo?)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -229,12 +319,23 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
         ),
       );
       if (confirmed != true || !mounted) return;
-      if (_photo case final photo?) {
+      if ((_photo ?? _video) case final evidence?) {
         _stagedPath ??= await widget.repository.upload(
           _id,
-          photo,
+          evidence,
           report: true,
+          video: _video != null,
         );
+      }
+      final attachment = _stagedPath ?? widget.pending?.reportPhoto;
+      if (attachment != null &&
+          (_stagedPath != null || !correctiveIsVideo(attachment))) {
+        try {
+          await widget.repository.inspectReportEvidence(attachment);
+        } on Exception {
+          if (correctiveIsVideo(attachment)) rethrow;
+          // The server can accept a photo and use text triage if its evidence check is unavailable.
+        }
       }
       if (!mounted) {
         if (_stagedPath case final path?) {
@@ -246,8 +347,6 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
         'id': _id,
         'facility_id': _facility,
         'qr': _qr,
-        'category': _category,
-        'urgency': _urgency,
         'title': _title.text.trim(),
         'description': _description.text.trim(),
         'location_detail': _location.text.trim(),
@@ -265,17 +364,16 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
       await widget.repository.report(report, photo: _stagedPath);
       _submitted = true;
       if (!mounted) return;
-      final reference = widget.repository.reportReference(_id);
+      final receipt = widget.repository.reportReceipt(_id);
       final track = await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
           title: const Text('Report received'),
           content: FutureBuilder(
-            future: reference,
+            future: receipt,
             builder: (context, snapshot) => Text(
-              snapshot.hasData
-                  ? '${snapshot.data} is awaiting maintenance review.'
-                  : 'Your report is saved. Open it to view its reference and track progress.',
+              snapshot.data ??
+                  'Your report is saved. Open it to track progress.',
             ),
           ),
           actions: [
@@ -295,7 +393,20 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
       }
     } on Exception catch (error) {
       if (mounted) {
-        setState(() => _error = correctiveError(error));
+        final message = correctiveError(error);
+        setState(() {
+          _error = message;
+          if (widget.pending == null &&
+              const {
+                'This campus location is inactive. Select another facility.',
+                'Select an existing campus facility.',
+              }.contains(message)) {
+            _facility = null;
+            _qr = null;
+            _catalog = widget.repository.catalog();
+            _error = 'This location is no longer available. Select another facility to continue.';
+          }
+        });
       } else if (_stagedPath case final path?) {
         unawaited(widget.repository.discardDraft(path));
       }
@@ -317,8 +428,16 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: FutureBuilder(
-            future: _catalog,
+            future: _canOpenForm ? _catalog : null,
             builder: (context, snapshot) {
+              if (!_canOpenForm) {
+                return const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: CorrectiveMessage(
+                    'Only the original reporter can edit a report awaiting review.',
+                  ),
+                );
+              }
               if (snapshot.hasError) {
                 return Padding(
                   padding: const EdgeInsets.all(20),
@@ -338,11 +457,6 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                     (row) => !widget.administrator || row['can_manage'] == true,
                   )
                   .toList();
-              final categories = {
-                for (final row in correctiveRows(snapshot.data!['categories']))
-                  row['name'] as String,
-                if (widget.pending case final report?) report.category,
-              }.toList();
               return Form(
                 key: _form,
                 child: ListView(
@@ -364,7 +478,7 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                     ],
                     if (locations.isEmpty && widget.pending == null)
                       const CorrectiveMessage(
-                        'Ask an administrator to add a campus facility before submitting a report.',
+                        'No active facilities are available. Ask an administrator to check the campus catalog.',
                       ),
                     if (locations.isNotEmpty || widget.pending != null) ...[
                       if (_nativeCamera && widget.pending == null) ...[
@@ -426,28 +540,6 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                             ? 'Enter a more precise location.'
                             : null,
                       ),
-                      DropdownButtonFormField<String>(
-                        initialValue: categories.contains(_category)
-                            ? _category
-                            : null,
-                        decoration: const InputDecoration(
-                          labelText: 'Reported category',
-                        ),
-                        items: categories
-                            .map(
-                              (label) => DropdownMenuItem(
-                                value: label,
-                                child: Text(label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _busy
-                            ? null
-                            : (value) => setState(() => _category = value),
-                        validator: (value) =>
-                            value == null ? 'Select a category.' : null,
-                      ),
-                      correctiveGap(),
                       TextFormField(
                         controller: _title,
                         enabled: !_busy,
@@ -481,31 +573,31 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                           icon: const Icon(Icons.mic_none),
                           label: const Text('Dictate description'),
                         ),
-                      correctiveGap(),
-                      DropdownButtonFormField<String>(
-                        initialValue: _urgency,
-                        decoration: const InputDecoration(
-                          labelText: 'Reported priority',
-                        ),
-                        items: correctiveUrgencies
-                            .map(
-                              (label) => DropdownMenuItem(
-                                value: label,
-                                child: Text(label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _busy
-                            ? null
-                            : (value) => setState(() => _urgency = value!),
-                      ),
-                      correctiveGap(8),
-                      const Text(
-                        'Campus operations confirms the category and priority before assigning work.',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
                       correctiveGap(16),
-                      if (_photo case final photo?) ...[
+                      if (widget.pending?.reportPhoto case final saved?) ...[
+                        Text(
+                          _photo != null || _video != null
+                              ? 'Original attachment'
+                              : 'Current attachment',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        correctiveGap(8),
+                        CorrectivePhoto(
+                          widget.repository,
+                          saved,
+                          key: ValueKey(saved),
+                          label: 'View current report photograph',
+                          previewHeight: 180,
+                        ),
+                        correctiveGap(),
+                      ],
+                      if ((_photo != null || _video != null) &&
+                          widget.pending?.reportPhoto != null)
+                        const Text(
+                          'Replacement attachment',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      if (_photo case final photo?)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: Image.memory(
@@ -514,52 +606,36 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
                             fit: BoxFit.cover,
                           ),
                         ),
+                      if (_videoName case final name?)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.videocam_outlined),
+                          title: Text(name, overflow: TextOverflow.ellipsis),
+                        ),
+                      if (_photo != null || _video != null)
                         TextButton(
                           onPressed: _busy
                               ? null
-                              : () {
-                                  if (_stagedPath case final path?) {
-                                    unawaited(
-                                      widget.repository.discardDraft(path),
-                                    );
-                                  }
-                                  setState(() {
-                                    _photo = null;
-                                    _photoDiagnostics = null;
-                                    _stagedPath = null;
-                                  });
-                                },
-                          child: const Text('Remove photograph'),
+                              : () => setState(_clearEvidence),
+                          child: const Text('Remove attachment'),
                         ),
-                      ],
-                      if (_photo == null && widget.pending?.reportPhoto != null)
-                        const Text(
-                          'The current photograph will stay attached unless you replace it.',
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _chooseEvidence,
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        label: Text(
+                          _photo != null ||
+                                  _video != null ||
+                                  widget.pending?.reportPhoto != null
+                              ? 'Replace photo or video'
+                              : 'Add photo or video',
                         ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          if (_nativeCamera)
-                            OutlinedButton.icon(
-                              onPressed: _busy
-                                  ? null
-                                  : () => _choosePhoto(ImageSource.camera),
-                              icon: const Icon(Icons.photo_camera_outlined),
-                              label: const Text('Take report photo'),
-                            ),
-                          OutlinedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _choosePhoto(ImageSource.gallery),
-                            icon: const Icon(Icons.attach_file),
-                            label: Text(
-                              widget.administrator
-                                  ? 'Attach photo (optional)'
-                                  : 'Attach report photo',
-                            ),
-                          ),
-                        ],
+                      ),
+                      correctiveGap(8),
+                      Text(
+                        widget.administrator
+                            ? 'Optional. Videos must be MP4 or MOV, up to 30 seconds and 10 MB.'
+                            : 'One attachment, up to 10 MB. Videos must be MP4 or MOV and no longer than 30 seconds.',
+                        style: const TextStyle(color: AppColors.muted),
                       ),
                       if (_error case final error?) ...[
                         correctiveGap(),

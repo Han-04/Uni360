@@ -12,11 +12,13 @@
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan facility QR codes and take photos as evidence of Uni360 tasks.</string>
+	<string>Scan facility QR codes and capture photos or videos for Uni360 reports.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record audio when capturing a video for a Uni360 incident report.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Verify your location when checking in or submitting campus maintenance work.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose photos for Uni360 incident reports or your account profile.</string>
+	<string>Choose photos or videos for Uni360 incident reports, or a profile photo.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

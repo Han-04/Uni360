@@ -10,9 +10,12 @@ import 'package:uni360/features/corrective/corrective_admin.dart';
 import 'package:uni360/features/corrective/corrective_case_pdf.dart';
 import 'package:uni360/features/corrective/corrective_photo_diagnostics.dart';
 import 'package:uni360/features/corrective/corrective_repository.dart';
+import 'package:uni360/features/corrective/corrective_widgets.dart';
+import 'package:uni360/features/corrective/incident_report_screen.dart';
 import 'package:uni360/features/preventive/admin/admin_dashboard.dart';
 import 'package:uni360/features/preventive/admin/admin_data.dart';
 import 'package:uni360/shared/account/account.dart';
+import 'package:uni360/shared/account/presentation/account_profile_screen.dart';
 
 import 'support/test_accounts.dart';
 
@@ -21,6 +24,7 @@ class _CorrectiveFixture extends CorrectiveRepository {
     this.actor, {
     required this.status,
     this.ownsReport = false,
+    this.savedPhoto,
   }) : super(
          SupabaseClient(
            'https://example.invalid',
@@ -31,6 +35,8 @@ class _CorrectiveFixture extends CorrectiveRepository {
 
   final String actor;
   final bool ownsReport;
+  final String? savedPhoto;
+  final photoPreviews = <String>[];
   String status;
   bool withdrawn = false;
   final actions = <String>[];
@@ -53,6 +59,7 @@ class _CorrectiveFixture extends CorrectiveRepository {
     'worker_name': 'Test Account',
     'worker_id': actor,
     'description': 'Water is pooling around the sink.',
+    'report_photo': savedPhoto,
     'created_at': '2026-11-12T04:00:00Z',
     'attempt': 1,
     'checklist': ['Confirm the repair'],
@@ -75,6 +82,17 @@ class _CorrectiveFixture extends CorrectiveRepository {
       CorrectiveDetail(incident, [], [], []);
 
   @override
+  String get actorId => actor;
+
+  @override
+  Future<String> photoUrl(String path) async {
+    photoPreviews.add(path);
+    throw const CorrectiveException(
+      'Image network is unavailable in this test',
+    );
+  }
+
+  @override
   Future<CorrectiveRow> adminOptions(String id) async => {
     'candidates': [],
     'preventive': [],
@@ -83,6 +101,14 @@ class _CorrectiveFixture extends CorrectiveRepository {
 
   @override
   Future<CorrectiveRow> catalog() async => {
+    'facilities': [
+      {
+        'id': 'facility',
+        'label': 'Library',
+        'zone': 'Campus',
+        'can_manage': true,
+      },
+    ],
     'categories': [
       {'name': 'Plumbing', 'team': 'Plumbing'},
     ],
@@ -254,7 +280,7 @@ void main() {
       expect(theme.colorScheme.primary, WorkerColors.blue);
       expect(theme.scaffoldBackgroundColor, WorkerColors.background);
       expect(find.text('My reports'), findsOneWidget);
-      expect(find.text('Report an incident'), findsOneWidget);
+      expect(find.byTooltip('Report an incident'), findsOneWidget);
       expect(find.text('Assigned'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -344,6 +370,97 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('Only the reporter can open the edit form with saved evidence', (
+    tester,
+  ) async {
+    const path = 'report/current.jpg';
+    final owner = _CorrectiveFixture(
+      'reporter',
+      status: 'reported',
+      ownsReport: true,
+      savedPhoto: path,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: IncidentReportScreen(owner, pending: owner.incident)),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Current attachment'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Current attachment'), findsOneWidget);
+    expect(owner.photoPreviews, [path]);
+    expect(find.byType(CheckboxListTile), findsNothing);
+
+    final administrator = _CorrectiveFixture('admin', status: 'reported');
+    await tester.pumpWidget(
+      MaterialApp(
+        key: const ValueKey('other-session'),
+        home: IncidentReportScreen(
+          administrator,
+          pending: owner.incident,
+          administrator: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsNothing);
+    expect(find.textContaining('Only the original reporter'), findsOneWidget);
+    expect(administrator.photoPreviews, isEmpty);
+  });
+
+  testWidgets('Incident details show the description and photo finding', (
+    tester,
+  ) async {
+    final repository = _CorrectiveFixture('reporter', status: 'reported');
+    final incident = CorrectiveIncident({
+      ...repository.incident.data,
+      'triage': {
+        'vision_status': 'vision_fault',
+        'observation': 'Possible visible leak from sink plumbing.',
+        'photo_category': 'Plumbing',
+        'photo_priority': 'Medium',
+      },
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: IncidentSummary(incident, repository),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Water is pooling around the sink.'), findsOneWidget);
+    expect(
+      find.text('Possible visible leak from sink plumbing.'),
+      findsOneWidget,
+    );
+    expect(find.text('Photo priority · Medium'), findsOneWidget);
+  });
+
+  test(
+    'Report status badges distinguish pending, withdrawn and successful cases',
+    () {
+      CorrectiveBadge badge(String status, {bool withdrawn = false}) =>
+          CorrectiveBadge.status(
+            CorrectiveIncident({
+              'status': status,
+              if (withdrawn) 'withdrawn_at': '2026-11-26T15:46:00Z',
+            }),
+          );
+      expect(badge('reported').background, const Color(0xFFFFF0A7));
+      expect(
+        badge('dismissed', withdrawn: true).background,
+        const Color(0xFFFFE6E7),
+      );
+      expect(badge('approved').background, const Color(0xFFD8F5E4));
+      expect(badge('resolved').background, const Color(0xFFD8F5E4));
+    },
+  );
+
   testWidgets('A reporter can confirm withdrawal of a pending report', (
     tester,
   ) async {
@@ -421,6 +538,8 @@ void main() {
       await _tapVisible(tester, find.text('Corrective Maintenance'));
       final footer = find.byKey(const ValueKey('corrective-footer'));
       final footerTop = tester.getTopLeft(footer).dy;
+      final addIncident = find.byTooltip('Report an incident');
+      expect(tester.getCenter(addIncident).dx, tester.getCenter(footer).dx);
       expect(
         tester.getBottomLeft(find.byType(ListView)).dy,
         lessThanOrEqualTo(footerTop),
@@ -430,7 +549,7 @@ void main() {
       await tester.tap(find.text('My reports'));
       await tester.pumpAndSettle();
       expect(find.text('Report history'), findsOneWidget);
-      expect(find.text('Report an incident'), findsOneWidget);
+      expect(find.byTooltip('Report an incident'), findsOneWidget);
 
       await tester.tap(find.text('Updates'));
       await tester.pumpAndSettle();
@@ -438,10 +557,43 @@ void main() {
       expect(find.text('Report history'), findsNothing);
       expect(tester.getTopLeft(footer).dy, footerTop);
 
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountProfileScreen), findsOneWidget);
+      expect(find.text('My profile'), findsOneWidget);
+      await tester.tap(find.byTooltip('Edit profile'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'Updated Worker',
+      );
+      await _tapVisible(tester, find.text('Update Profile'));
+      expect(find.text('Updated Worker'), findsOneWidget);
+
+      await tester.tap(addIncident);
+      await tester.pumpAndSettle();
+      expect(find.text('Report an incident'), findsOneWidget);
+      expect(find.text('Reported priority'), findsNothing);
+      await _tapVisible(tester, find.text('Add photo or video'));
+      expect(find.text('Choose a photo'), findsOneWidget);
+      expect(find.text('Choose a video'), findsOneWidget);
+      expect(find.textContaining('Up to 30 seconds'), findsWidgets);
+      await tester.tapAt(const Offset(20, 100));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text('Assigned'));
       await tester.pumpAndSettle();
       expect(find.text('Assigned incidents'), findsOneWidget);
       expect(tester.takeException(), isNull);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await _tapVisible(tester, find.text('Preventive Maintenance'));
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('Updated Worker'), findsOneWidget);
     },
   );
 

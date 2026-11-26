@@ -69,7 +69,22 @@ Future<Uint8List> createCorrectiveCasePdf(CorrectiveDetail detail) async {
         if (caseFile.resolved case final resolved?)
           pw.Text('Resolved  ${correctiveTime(resolved)}'),
         pw.SizedBox(height: 12),
+        pw.Text(
+          'Reporter description',
+          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+        ),
         pw.Paragraph(text: caseFile.description),
+        if (caseFile.photoAssessment case final assessment?) ...[
+          pw.Text(
+            'Photo analysis',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Paragraph(text: assessment),
+          if (caseFile.photoCategory case final category?)
+            pw.Text('Photo category  $category'),
+          if (caseFile.photoPriority case final priority?)
+            pw.Text('Photo priority  $priority'),
+        ],
         pw.Header(level: 1, text: 'Repair and verification'),
         if (detail.visits.isEmpty)
           pw.Text('No completed visit has been recorded.'),

@@ -18,11 +18,13 @@ class WorkerBottomNavigation extends StatelessWidget {
     required this.destinations,
     required this.selectedIndex,
     required this.onDestinationSelected,
+    this.centerAction,
   });
 
   final List<WorkerDestination> destinations;
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final VoidCallback? centerAction;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -59,8 +61,26 @@ class WorkerBottomNavigation extends StatelessWidget {
                 height: 72,
                 child: Row(
                   children: [
-                    for (var index = 0; index < destinations.length; index++)
-                      _tab(context, index, destinations[index]),
+                    if (centerAction case final report?) ...[
+                      _group(context, 0, destinations.length - 2),
+                      IconButton.filled(
+                        tooltip: 'Report an incident',
+                        onPressed: report,
+                        style: IconButton.styleFrom(
+                          fixedSize: const Size.square(48),
+                          backgroundColor: WorkerColors.blue,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.add_rounded, size: 28),
+                      ),
+                      _group(
+                        context,
+                        destinations.length - 2,
+                        destinations.length,
+                      ),
+                    ] else
+                      for (var index = 0; index < destinations.length; index++)
+                        _tab(context, index, destinations[index]),
                   ],
                 ),
               ),
@@ -68,6 +88,15 @@ class WorkerBottomNavigation extends StatelessWidget {
           ),
         ),
       ),
+    ),
+  );
+
+  Widget _group(BuildContext context, int start, int end) => Expanded(
+    child: Row(
+      children: [
+        for (var index = start; index < end; index++)
+          _tab(context, index, destinations[index]),
+      ],
     ),
   );
 
